@@ -23,18 +23,32 @@ export default function RegisterPage() {
   const { toast } = useToast();
   const router = useRouter();
 
+  const [submitted, setSubmitted] = useState(false);
+
   const handleRegister = async (event: React.FormEvent) => {
     event.preventDefault();
+    console.log('handleRegister called, submitted:', submitted, 'isLoading:', isLoading);
+    
+    if (submitted || isLoading) {
+      console.log('Blocking duplicate submission');
+      return; // guard against double submit
+    }
+    
+    setSubmitted(true);
     setIsLoading(true);
+    
+    console.log('Starting registration for:', email.trim().toLowerCase());
     
     try {
       const success = await register({
-        email,
+        email: email.trim().toLowerCase(),
         password,
-        candidate_name: candidateName,
-        candidate_id: candidateId,
-        client_name: clientName,
+        candidate_name: candidateName.trim(),
+        candidate_id: candidateId.trim(),
+        client_name: clientName.trim(),
       });
+
+      console.log('Registration result:', success);
 
       if (success) {
         toast({
@@ -43,11 +57,13 @@ export default function RegisterPage() {
         });
         router.push('/login');
       } else {
+        // Distinguish duplicate vs general failure using auth context error if desired later
         toast({
           variant: 'destructive',
           title: 'Registration Failed',
-          description: 'An account with this email already exists.',
+          description: 'Account may already exist or registration disabled.',
         });
+        setSubmitted(false); // allow retry on failure
       }
     } catch (error) {
       console.error('Registration error:', error);
@@ -56,6 +72,7 @@ export default function RegisterPage() {
         title: 'Registration Error',
         description: 'An error occurred during registration. Please try again.',
       });
+      setSubmitted(false);
     } finally {
       setIsLoading(false);
     }

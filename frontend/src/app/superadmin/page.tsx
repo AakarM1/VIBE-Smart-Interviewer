@@ -16,13 +16,15 @@ import {
   Search,
   Home,
   Database,
-  Activity,
+  
   ChevronDown
 } from 'lucide-react';
 import { useAuth, ProtectedRoute } from '@/contexts/auth-context';
 import CompanyManagement from '@/components/superadmin/CompanyManagement';
 import UserManagement from '@/components/superadmin/UserManagement';
 import CompetencyManagement from '@/components/superadmin/CompetencyManagement';
+import ContentManagement from '@/components/superadmin/ContentManagement';
+import ReportsAnalytics from '@/components/superadmin/ReportsAnalytics';
 
 // Define navigation items for the sidebar
 const navigationItems = [
@@ -195,11 +197,6 @@ function SuperAdminDashboard() {
                 <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full"></div>
               </button>
 
-              {/* System Status */}
-              <div className="flex items-center space-x-2 px-3 py-2 bg-green-50 text-green-700 rounded-lg">
-                <Activity className="h-4 w-4" />
-                <span className="text-sm font-medium">All Systems Operational</span>
-              </div>
             </div>
           </div>
         </header>
@@ -293,16 +290,7 @@ function OverviewSection() {
           <p className="text-sm text-green-600 mt-2">{loading ? '—' : `+${stats?.submissions?.last_24_hours ?? 0} last 24h`}</p>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-600">System Health</p>
-              <p className="text-3xl font-bold text-gray-900">{loading ? '—' : `${stats?.system?.uptime_percent ?? 0}%`}</p>
-            </div>
-            <Database className="h-8 w-8 text-blue-600" />
-          </div>
-          <p className="text-sm text-green-600 mt-2">{loading ? '—' : (stats?.system?.status || 'Unknown')}</p>
-        </div>
+        {/* System Health card removed until a meaningful metric is implemented */}
       </div>
 
       {error && (
@@ -339,12 +327,7 @@ function UsersSection() {
 }
 
 function ContentSection() {
-  return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Content Management</h3>
-      <p className="text-gray-600">Content management interface will be implemented here.</p>
-    </div>
-  );
+  return <ContentManagement />;
 }
 
 function CompetenciesSection() {
@@ -352,12 +335,7 @@ function CompetenciesSection() {
 }
 
 function ReportsSection() {
-  return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Reports & Analytics</h3>
-      <p className="text-gray-600">Reports and analytics interface will be implemented here.</p>
-    </div>
-  );
+  return <ReportsAnalytics />;
 }
 
 function SettingsSection() {

@@ -92,23 +92,46 @@ export function AuthProvider({ children }: AuthProviderProps) {
   };
 
   const register = async (details: { email: string; password: string; candidate_name: string; candidate_id: string; client_name: string; }): Promise<boolean> => {
+    // Normalize email client-side
+    const payload = { ...details, email: details.email.trim().toLowerCase() };
+    
+    console.log('auth-context register() called with:', payload.email);
+    
+    if (loading) {
+      console.log('Already loading, preventing duplicate submission');
+      // Prevent duplicate submission while already processing
+      return false;
+    }
     setLoading(true);
     setError(null);
     try {
+      console.log('Making POST request to /auth/register');
       const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000') + '/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(details),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        setError(err.detail || 'Registration failed');
+      
+      console.log('Response status:', res.status);
+      
+      if (res.ok) {
+        console.log('Registration successful');
         setLoading(false);
-        return false;
+        return true;
       }
+      // Handle duplicate (treat as soft success so UI can message appropriately)
+      if (res.status === 409) {
+        console.log('Registration failed: duplicate email');
+        setLoading(false);
+        return false; // caller can distinguish via context error if needed
+      }
+      const err = await res.json().catch(() => ({}));
+      console.log('Registration failed with error:', err);
+      setError(err.detail || 'Registration failed');
       setLoading(false);
-      return true;
+      return false;
     } catch (e) {
+      console.error('Registration exception:', e);
       setError(e instanceof Error ? e.message : 'Registration failed');
       setLoading(false);
       return false;
