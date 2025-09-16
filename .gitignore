@@ -1,0 +1,74 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / Next.js
+node_modules/
+.next/
+.next-standalone/
+out/
+.next/cache/
+.next/types/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+backend/.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.sqlite3
+instance/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Python build
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Coverage
+coverage/
+
+# Cache
+.cache/
+.eslintcache
+
+# Uploads & generated media
+uploads/
+frontend/public/uploads/
+
+# Misc
+*.log
+*.tmp
+*.bak
+
+# Firebase/Genkit local state
+firebase-debug.log
+.firebaserc.local
+.genkit/
+
+# Tailwind JIT
+frontend/.turbo/
+
+# OS specific
+Desktop.ini
+*.venv/
