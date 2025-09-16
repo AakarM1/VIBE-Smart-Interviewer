@@ -32,11 +32,6 @@ async def get_overview_statistics(
         users_last_7 = db.query(User).filter(User.created_at >= last_7_days).count()
         submissions_last_24h = db.query(Submission).filter(Submission.created_at >= last_24h).count()
 
-        # System health placeholder: could be extended later
-        system_health = {
-            "uptime_percent": 99.9,
-            "status": "operational"
-        }
 
     return {
         "companies": {
@@ -51,6 +46,6 @@ async def get_overview_statistics(
             "total": total_submissions,
             "last_24_hours": submissions_last_24h,
         },
-        "system": system_health,
+    # System health removed until a meaningful signal is implemented
         "generated_at": datetime.utcnow().isoformat() + "Z",
     }

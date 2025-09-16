@@ -28,6 +28,7 @@ from app.models import (
 from pydantic import BaseModel, EmailStr
 from app.api import api_router
 from fastapi import Path
+from sqlalchemy import func
 
 # Configure logging
 logging.basicConfig(
@@ -231,14 +232,41 @@ async def register_user(
     from app.models import User, Tenant
     from app.auth import get_password_hash
     
-    allow_registration = os.getenv("ALLOW_PUBLIC_REGISTRATION", "false").lower() == "true"
-    if not allow_registration:
-        raise HTTPException(status_code=403, detail="Public registration is disabled")
+    allow_registration_env = os.getenv("ALLOW_PUBLIC_REGISTRATION", "false").lower() == "true"
+    allow_registration = allow_registration_env
 
-    # Check for existing email
-    existing = db.query(User).filter(User.email == req.email).first()
+    # Try system global config if env not set
+    if not allow_registration:
+        try:
+            from app.models import Configuration
+            cfg = (
+                db.query(Configuration)
+                .filter(
+                    Configuration.config_type == "global",
+                    Configuration.scope == "system",
+                    Configuration.is_active == True,
+                )
+                .order_by(Configuration.created_at.desc())
+                .first()
+            )
+            if cfg and isinstance(cfg.config_data, dict):
+                allow_registration = bool(cfg.config_data.get("allow_public_registration"))
+        except Exception:
+            # Ignore config read errors
+            pass
+
+    # In development environment, permit registration by default for convenience
+    if not allow_registration and os.getenv("ENVIRONMENT", "development").lower() in ("dev", "development"):
+        allow_registration = True
+
+    if not allow_registration:
+        raise HTTPException(status_code=403, detail="Public registration is disabled. Set ALLOW_PUBLIC_REGISTRATION=true or enable allow_public_registration in global config.")
+
+    # Normalize email and check for existing (case-insensitive)
+    normalized_email = req.email.strip().lower()
+    existing = db.query(User).filter(func.lower(User.email) == normalized_email).first()
     if existing:
-        raise HTTPException(status_code=409, detail="User with this email already exists")
+        raise HTTPException(status_code=409, detail="User with this email already exists (duplicate)")
 
     # Ensure we have a tenant to attach users to (use System)
     system_tenant = db.query(Tenant).filter(Tenant.name == "System").first()
@@ -250,7 +278,7 @@ async def register_user(
         db.refresh(system_tenant)
 
     new_user = User(
-        email=req.email,
+        email=normalized_email,
         password_hash=get_password_hash(req.password),
         candidate_name=req.candidate_name,
         candidate_id=req.candidate_id,
@@ -321,8 +349,9 @@ async def create_user(
     from app.models import User
     from app.auth import get_password_hash
     
-    # Check if user already exists
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
+    # Normalize email and check if user already exists (case-insensitive)
+    normalized_email = user_data.email.strip().lower()
+    existing_user = db.query(User).filter(func.lower(User.email) == normalized_email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -331,7 +360,7 @@ async def create_user(
     
     # Create new user
     new_user = User(
-        email=user_data.email,
+        email=normalized_email,
         password_hash=get_password_hash(user_data.password),
         candidate_name=user_data.candidate_name,
         candidate_id=user_data.candidate_id,
