@@ -1,0 +1,64 @@
+{
+  "header": {
+    "hello": "HELLO",
+    "home": "HOME",
+    "admin": "Admin",
+    "logout": "Logout",
+    "login": "Login",
+    "register": "Register"
+  },
+  "language": {
+    "selector": {
+      "label": "Language",
+      "select": "Select Language"
+    },
+    "names": {
+      "en": "English",
+      "es": "Spanish",
+      "fr": "French",
+      "ar": "Arabic",
+      "de": "German",
+      "zh": "Chinese",
+      "ja": "Japanese",
+      "ko": "Korean",
+      "pt": "Portuguese",
+      "ru": "Russian"
+    }
+  },
+  "interview": {
+    "title": "Interview Assessment",
+    "start": "Start Interview",
+    "continue": "Continue",
+    "pause": "Pause",
+    "stop": "Stop",
+    "submit": "Submit",
+    "recording": "Recording...",
+    "processing": "Processing your response...",
+    "error": "An error occurred",
+    "complete": "Interview Complete",
+    "thank_you": "Thank you for completing the interview."
+  },
+  "sjt": {
+    "title": "Situational Judgment Test",
+    "instructions": "Read each scenario carefully and select the best response.",
+    "next": "Next",
+    "previous": "Previous",
+    "submit": "Submit Test",
+    "complete": "Test Complete"
+  },
+  "buttons": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "submit": "Submit",
+    "continue": "Continue",
+    "back": "Back",
+    "next": "Next"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "please_wait": "Please wait...",
+    "try_again": "Try again"
+  }
+}

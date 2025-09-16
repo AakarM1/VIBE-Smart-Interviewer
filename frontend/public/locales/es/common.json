@@ -1,0 +1,64 @@
+{
+  "header": {
+    "hello": "HOLA",
+    "home": "INICIO",
+    "admin": "Administrador",
+    "logout": "Cerrar Sesión",
+    "login": "Iniciar Sesión",
+    "register": "Registrarse"
+  },
+  "language": {
+    "selector": {
+      "label": "Idioma",
+      "select": "Seleccionar Idioma"
+    },
+    "names": {
+      "en": "Inglés",
+      "es": "Español",
+      "fr": "Francés",
+      "ar": "Árabe",
+      "de": "Alemán",
+      "zh": "Chino",
+      "ja": "Japonés",
+      "ko": "Coreano",
+      "pt": "Portugués",
+      "ru": "Ruso"
+    }
+  },
+  "interview": {
+    "title": "Evaluación de Entrevista",
+    "start": "Iniciar Entrevista",
+    "continue": "Continuar",
+    "pause": "Pausar",
+    "stop": "Parar",
+    "submit": "Enviar",
+    "recording": "Grabando...",
+    "processing": "Procesando tu respuesta...",
+    "error": "Ocurrió un error",
+    "complete": "Entrevista Completa",
+    "thank_you": "Gracias por completar la entrevista."
+  },
+  "sjt": {
+    "title": "Prueba de Juicio Situacional",
+    "instructions": "Lee cada escenario cuidadosamente y selecciona la mejor respuesta.",
+    "next": "Siguiente",
+    "previous": "Anterior",
+    "submit": "Enviar Prueba",
+    "complete": "Prueba Completa"
+  },
+  "buttons": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "submit": "Enviar",
+    "continue": "Continuar",
+    "back": "Atrás",
+    "next": "Siguiente"
+  },
+  "common": {
+    "loading": "Cargando...",
+    "error": "Error",
+    "success": "Éxito",
+    "please_wait": "Por favor espera...",
+    "try_again": "Inténtalo de nuevo"
+  }
+}

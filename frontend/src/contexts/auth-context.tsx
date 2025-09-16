@@ -1,0 +1,307 @@
+/**
+ * Authentication Context using FastAPI
+ * Replaces Firebase authentication
+ */
+'use client';
+
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
+import { apiService, User, LoginCredentials } from '@/lib/api-service';
+
+interface AuthContextType {
+  user: User | null;
+  loading: boolean;
+  error: string | null;
+  login: ((credentials: LoginCredentials) => Promise<boolean>) & ((email: string, password: string) => Promise<boolean>);
+  logout: () => void;
+  refreshUser: () => Promise<void>;
+  register: (details: { email: string; password: string; candidate_name: string; candidate_id: string; client_name: string; }) => Promise<boolean>;
+  isAuthenticated: boolean;
+  isSuperAdmin: boolean;
+  isAdmin: boolean;
+  isCandidate: boolean;
+  getUserAttempts: (testType: 'SJT' | 'JDT') => Promise<number>;
+  getLatestUserSubmission: (testType: 'SJT' | 'JDT') => Promise<any | null>;
+  getUsers: () => Promise<User[]>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export function AuthProvider({ children }: AuthProviderProps) {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Check if user is authenticated on app start
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (apiService.isAuthenticated()) {
+        try {
+          const result = await apiService.getCurrentUser();
+          if (result.data) {
+            setUser(result.data);
+          } else {
+            // Token might be invalid, clear it
+            apiService.logout();
+          }
+        } catch (error) {
+          console.error('Auth check failed:', error);
+          apiService.logout();
+        }
+      }
+      setLoading(false);
+    };
+
+    checkAuth();
+  }, []);
+
+  const login = async (arg1: LoginCredentials | string, arg2?: string): Promise<boolean> => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const creds: LoginCredentials = typeof arg1 === 'string' ? { email: arg1, password: arg2 || '' } : arg1;
+      const result = await apiService.login(creds);
+      
+      if (result.data) {
+        setUser(result.data.user);
+        setLoading(false);
+        return true;
+      } else {
+        setError(result.error || 'Login failed');
+        setLoading(false);
+        return false;
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Login failed');
+      setLoading(false);
+      return false;
+    }
+  };
+
+  const register = async (details: { email: string; password: string; candidate_name: string; candidate_id: string; client_name: string; }): Promise<boolean> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch((process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000') + '/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(details),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.detail || 'Registration failed');
+        setLoading(false);
+        return false;
+      }
+      setLoading(false);
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Registration failed');
+      setLoading(false);
+      return false;
+    }
+  };
+
+  const logout = () => {
+    apiService.logout();
+    setUser(null);
+    setError(null);
+  };
+
+  const refreshUser = async () => {
+    if (apiService.isAuthenticated()) {
+      try {
+        const result = await apiService.getCurrentUser();
+        if (result.data) {
+          setUser(result.data);
+        }
+      } catch (error) {
+        console.error('Failed to refresh user:', error);
+      }
+    }
+  };
+
+  const value: AuthContextType = {
+    user,
+    loading,
+    error,
+    login,
+    logout,
+    refreshUser,
+    register,
+    isAuthenticated: !!user,
+    isSuperAdmin: user?.role === 'superadmin',
+    isAdmin: user?.role === 'admin',
+    isCandidate: user?.role === 'candidate',
+    getUserAttempts: async (testType: 'SJT' | 'JDT') => {
+      try {
+        if (!user) return 0;
+        const res = await apiService.getSubmissions({ user_id: user.id, test_type: testType });
+        if (res.data) return res.data.length;
+        return 0;
+      } catch (e) {
+        console.error('Failed to get user attempts:', e);
+        return 0;
+      }
+    },
+    getLatestUserSubmission: async (testType: 'SJT' | 'JDT') => {
+      try {
+        if (!user) return null;
+        const res = await apiService.getSubmissions({ user_id: user.id, test_type: testType });
+        if (res.data && res.data.length > 0) {
+          // Sort by created_at desc if available
+          const sorted = [...res.data].sort((a, b) => {
+            const ca = new Date(a.created_at || a.createdAt || 0).getTime();
+            const cb = new Date(b.created_at || b.createdAt || 0).getTime();
+            return cb - ca;
+          });
+          return sorted[0];
+        }
+        return null;
+      } catch (e) {
+        console.error('Failed to get latest submission:', e);
+        return null;
+      }
+    },
+    getUsers: async () => {
+      try {
+        const res = await apiService.getUsers();
+        return res.data?.users || [];
+      } catch (e) {
+        console.error('Failed to get users:', e);
+        return [];
+      }
+    },
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+// Higher-order component for protecting routes
+export function withAuth<P extends object>(Component: React.ComponentType<P>) {
+  return function AuthenticatedComponent(props: P) {
+    const { isAuthenticated, loading } = useAuth();
+
+    if (loading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      );
+    }
+
+    if (!isAuthenticated) {
+      // Redirect to login or show login form
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">Authentication Required</h1>
+            <p className="text-gray-600">Please log in to access this page.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return <Component {...props} />;
+  };
+}
+
+// Higher-order component for superadmin-only routes
+export function withSuperAdminAuth<P extends object>(Component: React.ComponentType<P>) {
+  return function SuperAdminComponent(props: P) {
+    const { isSuperAdmin, loading, isAuthenticated } = useAuth();
+
+    if (loading) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        </div>
+      );
+    }
+
+    if (!isAuthenticated || !isSuperAdmin) {
+      return (
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h1>
+            <p className="text-gray-600">You need superadmin privileges to access this page.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return <Component {...props} />;
+  };
+}
+
+// Protected Route component for role-based access control
+interface ProtectedRouteProps {
+  children: ReactNode;
+  allowedRoles?: string[];
+  requireAuth?: boolean;
+}
+
+export function ProtectedRoute({ 
+  children, 
+  allowedRoles = [], 
+  requireAuth = true 
+}: ProtectedRouteProps) {
+  const { user, loading, isAuthenticated } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && requireAuth && !isAuthenticated) {
+      // Redirect to login page instead of showing message
+      router.push('/login');
+    }
+  }, [loading, requireAuth, isAuthenticated, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (requireAuth && !isAuthenticated) {
+    // Show loading while redirecting
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (allowedRoles.length > 0 && user && !allowedRoles.includes(user.role)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h1>
+          <p className="text-gray-600">
+            You don't have permission to access this page. Required roles: {allowedRoles.join(', ')}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}

@@ -1,0 +1,21 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 60
+    },
+    "app/api/background-analysis/route.ts": {
+      "maxDuration": 300
+    }
+  },
+  "env": {
+    "NEXT_PUBLIC_FIREBASE_PROJECT_ID": "trajectorie-vibe-8366c"
+  },
+  "build": {
+    "env": {
+      "NODE_OPTIONS": "--max-old-space-size=4096"
+    }
+  }
+}

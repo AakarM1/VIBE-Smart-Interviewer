@@ -1,0 +1,64 @@
+{
+  "header": {
+    "hello": "BONJOUR",
+    "home": "ACCUEIL",
+    "admin": "Administrateur",
+    "logout": "Déconnexion",
+    "login": "Connexion",
+    "register": "S'inscrire"
+  },
+  "language": {
+    "selector": {
+      "label": "Langue",
+      "select": "Sélectionner la langue"
+    },
+    "names": {
+      "en": "Anglais",
+      "es": "Espagnol",
+      "fr": "Français",
+      "ar": "Arabe",
+      "de": "Allemand",
+      "zh": "Chinois",
+      "ja": "Japonais",
+      "ko": "Coréen",
+      "pt": "Portugais",
+      "ru": "Russe"
+    }
+  },
+  "interview": {
+    "title": "Évaluation d'Entretien",
+    "start": "Commencer l'Entretien",
+    "continue": "Continuer",
+    "pause": "Pause",
+    "stop": "Arrêter",
+    "submit": "Soumettre",
+    "recording": "Enregistrement...",
+    "processing": "Traitement de votre réponse...",
+    "error": "Une erreur s'est produite",
+    "complete": "Entretien Terminé",
+    "thank_you": "Merci d'avoir terminé l'entretien."
+  },
+  "sjt": {
+    "title": "Test de Jugement Situationnel",
+    "instructions": "Lisez attentivement chaque scénario et sélectionnez la meilleure réponse.",
+    "next": "Suivant",
+    "previous": "Précédent",
+    "submit": "Soumettre le Test",
+    "complete": "Test Terminé"
+  },
+  "buttons": {
+    "save": "Sauvegarder",
+    "cancel": "Annuler",
+    "submit": "Soumettre",
+    "continue": "Continuer",
+    "back": "Retour",
+    "next": "Suivant"
+  },
+  "common": {
+    "loading": "Chargement...",
+    "error": "Erreur",
+    "success": "Succès",
+    "please_wait": "Veuillez patienter...",
+    "try_again": "Réessayer"
+  }
+}

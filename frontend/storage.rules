@@ -1,0 +1,63 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for Verbal Insights Platform
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is admin or superadmin
+    function isAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.email in [
+               'admin@yourcompany.com',
+               'superadmin@yourcompany.com'
+             ];
+    }
+    
+    // Interview submissions - accessible by authenticated users
+    match /submissions/{userId}/{submissionId}/{fileName} {
+      // Users can upload their own submissions
+      allow write: if isAuthenticated() && 
+                      request.auth.uid == userId;
+      
+      // Users can read their own submissions, admins can read all
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid == userId || isAdmin());
+      
+      // Admins can delete any submission
+      allow delete: if isAdmin();
+    }
+    
+    // Admin-only areas
+    match /admin/{allPaths=**} {
+      allow read, write, delete: if isAdmin();
+    }
+    
+    // System files and configurations
+    match /system/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write, delete: if isAdmin();
+    }
+    
+    // Temporary uploads and processing
+    match /temp/{allPaths=**} {
+      allow read, write: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+    
+    // Public assets (logos, etc.)
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write, delete: if isAdmin();
+    }
+    
+    // Default deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
