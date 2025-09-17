@@ -83,7 +83,7 @@ class User(Base, TimestampMixin):
     audit_logs = relationship("AuditLog", back_populates="user")
 
 class Submission(Base, TimestampMixin):
-    """Test submission and analysis results"""
+    """Test submission and analysis results with enhanced tracking"""
     __tablename__ = 'submissions'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -98,9 +98,17 @@ class Submission(Base, TimestampMixin):
     candidate_language = Column(String(10), default='en')
     ui_language = Column(String(10), default='en')
     
-    # Test data
+    # Test data with enhanced structure
     conversation_history = Column(JSON, nullable=False)
     analysis_result = Column(JSON)
+    
+    # Enhanced tracking
+    total_questions = Column(Integer, default=0)
+    base_questions = Column(Integer, default=0)  # Number of original scenario questions
+    follow_up_questions = Column(Integer, default=0)  # Number of AI-generated follow-ups
+    
+    # Configuration snapshot (store the config used for this test)
+    test_configuration = Column(JSON)  # Store SJT/JDT config used
     
     # Status tracking
     status = Column(String(50), default='submitted')
@@ -119,7 +127,7 @@ class Submission(Base, TimestampMixin):
     media_files = relationship("MediaFile", back_populates="submission", cascade="all, delete-orphan")
 
 class MediaFile(Base, TimestampMixin):
-    """Video/Audio file management"""
+    """Video/Audio file management with enhanced organization"""
     __tablename__ = 'media_files'
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -132,17 +140,26 @@ class MediaFile(Base, TimestampMixin):
     mime_type = Column(String(100))
     file_size = Column(BIGINT)
     
-    # Question association
+    # Enhanced question and scenario association
     question_index = Column(Integer, nullable=False)
+    scenario_id = Column(String(100))  # Maps to SJT scenario ID
+    is_follow_up = Column(Boolean, default=False)
+    follow_up_sequence = Column(Integer, default=0)  # 0 for base question, 1+ for follow-ups
     
-    # Storage details
-    storage_provider = Column(String(50), default='local')
-    storage_url = Column(Text)
+    # Storage details with Firebase support
+    storage_provider = Column(String(50), default='firebase')
+    storage_url = Column(Text)  # Firebase Storage URL
+    firebase_path = Column(Text)  # Path in Firebase Storage for organization
+    
+    # Processing status
+    transcription_status = Column(String(50), default='pending')
+    transcription_text = Column(Text)
     
     # Constraints
     __table_args__ = (
         CheckConstraint("file_type IN ('video', 'audio')", name='check_file_type'),
         CheckConstraint("storage_provider IN ('local', 's3', 'firebase')", name='check_storage_provider'),
+        CheckConstraint("transcription_status IN ('pending', 'processing', 'completed', 'failed')", name='check_transcription_status'),
     )
     
     # Relationships

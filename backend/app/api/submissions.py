@@ -27,10 +27,10 @@ async def create_submission(
 ):
     """Create a new test submission"""
     
-    # Create submission
+    # Create submission (convert UUIDs to strings for SQLite compatibility)
     new_submission = Submission(
-        user_id=current_user.id,
-        tenant_id=current_user.tenant_id,
+        user_id=str(current_user.id),
+        tenant_id=str(current_user.tenant_id) if current_user.tenant_id else None,
         candidate_name=submission_data.candidate_name,
         candidate_id=submission_data.candidate_id or current_user.candidate_id,
         test_type=submission_data.test_type,
@@ -63,11 +63,11 @@ async def list_submissions(
         
         # Filter by tenant for non-superadmin users
         if current_user.role != "superadmin":
-            query = query.filter(Submission.tenant_id == current_user.tenant_id)
+            query = query.filter(Submission.tenant_id == str(current_user.tenant_id))
         
         # Filter by candidate for regular users
         if current_user.role == "candidate":
-            query = query.filter(Submission.user_id == current_user.id)
+            query = query.filter(Submission.user_id == str(current_user.id))
         
         # Apply filters
         if test_type:

@@ -1,4 +1,5 @@
-import { configService } from '@/lib/database';
+import { apiService } from '@/lib/api-service';
+import { configService as legacyConfigService } from '@/lib/database';
 
 // Typed interfaces for SJT configuration
 export interface SJTSettings {
@@ -54,12 +55,12 @@ export const configurationService = {
   // Save JDT configuration
   async saveJDTConfig(config: any): Promise<boolean> {
     try {
-      console.log('💾 Saving JDT config to Firestore');
-      const result = await configService.save('jdt', config);
+      console.log('💾 Saving JDT config to FastAPI');
+      const result = await apiService.saveConfiguration('jdt', config);
       console.log('✅ JDT config saved successfully');
-      return result;
+      return !!result.data;
     } catch (error) {
-      console.error('❌ Error saving JDT config to Firestore:', error);
+      console.error('❌ Error saving JDT config to FastAPI:', error);
       return false;
     }
   },
@@ -67,51 +68,65 @@ export const configurationService = {
   // Get JDT configuration
   async getJDTConfig(): Promise<any | null> {
     try {
-      console.log('📖 Fetching JDT config from Firestore');
-      const config = await configService.getByType('jdt');
-      console.log('✅ JDT config fetched:', config ? 'Found' : 'Not found');
-      return config;
+      console.log('📖 Fetching JDT config from FastAPI');
+      const result = await apiService.getConfiguration('jdt');
+      console.log('✅ JDT config fetched:', result.data ? 'Found' : 'Not found');
+      return result.data?.config_data || null;
     } catch (error) {
-      console.error('❌ Error getting JDT config from Firestore:', error);
+      console.error('❌ Error getting JDT config from FastAPI:', error);
       return null;
     }
   },
 
-  // Save SJT configuration
+  // Save SJT configuration with fallback
   async saveSJTConfig(config: any): Promise<boolean> {
     try {
-      console.log('💾 Saving SJT config to Firestore');
-      const result = await configService.save('sjt', config);
-      console.log('✅ SJT config saved successfully');
-      return result;
+      console.log('💾 Saving SJT config to FastAPI (primary)');
+      const result = await apiService.saveConfiguration('sjt', config);
+      console.log('✅ SJT config saved successfully to FastAPI');
+      return !!result.data;
     } catch (error) {
-      console.error('❌ Error saving SJT config to Firestore:', error);
-      return false;
+      console.warn('⚠️ FastAPI save failed, trying legacy Firestore fallback:', error);
+      try {
+        const fallbackResult = await legacyConfigService.save('sjt', config);
+        console.log('✅ SJT config saved successfully to Firestore (fallback)');
+        return fallbackResult;
+      } catch (fallbackError) {
+        console.error('❌ Both FastAPI and Firestore save failed:', fallbackError);
+        return false;
+      }
     }
   },
 
-  // Get SJT configuration
+  // Get SJT configuration with fallback
   async getSJTConfig(): Promise<any | null> {
     try {
-      console.log('📖 Fetching SJT config from Firestore');
-      const config = await configService.getByType('sjt');
-      console.log('✅ SJT config fetched:', config ? 'Found' : 'Not found');
-      return config;
+      console.log('📖 Fetching SJT config from FastAPI (primary)');
+      const result = await apiService.getConfiguration('sjt');
+      console.log('✅ SJT config fetched from FastAPI:', result.data ? 'Found' : 'Not found');
+      return result.data?.config_data || null;
     } catch (error) {
-      console.error('❌ Error getting SJT config from Firestore:', error);
-      return null;
+      console.warn('⚠️ FastAPI fetch failed, trying legacy Firestore fallback:', error);
+      try {
+        const fallbackResult = await legacyConfigService.getByType('sjt');
+        console.log('✅ SJT config fetched from Firestore (fallback):', fallbackResult ? 'Found' : 'Not found');
+        return fallbackResult;
+      } catch (fallbackError) {
+        console.error('❌ Both FastAPI and Firestore fetch failed:', fallbackError);
+        return null;
+      }
     }
   },
 
   // Save global settings
   async saveGlobalSettings(settings: any): Promise<boolean> {
     try {
-      console.log('💾 Saving global settings to Firestore');
-      const result = await configService.save('global', settings);
+      console.log('💾 Saving global settings to FastAPI');
+      const result = await apiService.saveConfiguration('global', settings);
       console.log('✅ Global settings saved successfully');
-      return result;
+      return !!result.data;
     } catch (error) {
-      console.error('❌ Error saving global settings to Firestore:', error);
+      console.error('❌ Error saving global settings to FastAPI:', error);
       return false;
     }
   },
@@ -119,17 +134,17 @@ export const configurationService = {
   // Get global settings
   async getGlobalSettings(): Promise<any | null> {
     try {
-      console.log('📖 Fetching global settings from Firestore');
-      const settings = await configService.getByType('global');
-      if (!settings) {
+      console.log('📖 Fetching global settings from FastAPI');
+      const result = await apiService.getConfiguration('global');
+      if (!result.data) {
         // Safe fallback if backend returns 404 Not Found
         console.warn('Global settings not found, using safe defaults');
         return null;
       }
       console.log('✅ Global settings fetched:', 'Found');
-      return settings;
+      return result.data?.config_data || null;
     } catch (error) {
-      console.error('❌ Error getting global settings from Firestore:', error);
+      console.error('❌ Error getting global settings from FastAPI:', error);
       return null;
     }
   }

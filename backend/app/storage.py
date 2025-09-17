@@ -1,6 +1,6 @@
 """
 Media Storage System for Trajectorie Assessment Platform
-Supports both local file storage and AWS S3
+Supports local file storage, AWS S3, and Firebase Storage
 """
 
 import os
@@ -17,6 +17,13 @@ except Exception:  # pragma: no cover - optional dependency
     boto3 = None  # type: ignore
     ClientError = Exception  # type: ignore
     NoCredentialsError = Exception  # type: ignore
+
+try:
+    # Import Firebase Storage manager
+    from app.firebase_storage import get_firebase_storage
+except ImportError:
+    get_firebase_storage = None
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,7 +32,7 @@ class MediaStorageConfig:
     """Configuration for media storage"""
     
     def __init__(self):
-        self.storage_provider = os.getenv("STORAGE_PROVIDER", "local")
+        self.storage_provider = os.getenv("STORAGE_PROVIDER", "firebase")  # Default to Firebase
         self.local_storage_path = os.getenv("STORAGE_PATH", "./uploads")
         self.max_file_size = int(os.getenv("MAX_FILE_SIZE", "10485760"))  # 10MB default
         
@@ -34,6 +41,10 @@ class MediaStorageConfig:
         self.aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
         self.aws_s3_bucket = os.getenv("AWS_S3_BUCKET")
         self.aws_s3_region = os.getenv("AWS_S3_REGION", "us-east-1")
+        
+        # Firebase Configuration
+        self.firebase_storage_bucket = os.getenv("FIREBASE_STORAGE_BUCKET", "trajectorie-uploads.appspot.com")
+        self.firebase_service_account_key = os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY_PATH")
         
         # Allowed file types
         self.allowed_video_types = [

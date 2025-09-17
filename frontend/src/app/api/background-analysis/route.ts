@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { apiService } from '@/lib/api-service';
 import { submissionService, convertFirestoreSubmission } from '@/lib/database';
+import { configurationService } from '@/lib/config-service';
 import { analyzeConversation } from '@/ai/flows/analyze-conversation';
 import { analyzeSJTResponse, analyzeSingleCompetency, type AnalyzeSJTResponseInput } from '@/ai/flows/analyze-sjt-response';
 import { analyzeSJTScenario, type AnalyzeSJTScenarioInput } from '@/ai/flows/analyze-sjt-scenario';
 import { generateCompetencySummaries } from '@/ai/flows/generate-competency-summaries';
-import { configurationService } from '@/lib/config-service';
 import { groupEntriesByScenario, calculatePenaltyScore, isFollowUpQuestion } from '@/lib/scenario-grouping-utils';
 import type { AnalysisResult, QuestionwiseDetail, Competency } from '@/types';
 
@@ -30,25 +31,48 @@ export async function POST(request: NextRequest) {
       console.log('🤖 Processing interview with provided analysisInput');
       analysisResult = await analyzeConversation(analysisInput);
     } else if (type === 'interview') {
-      // New approach: Get submission and build analysisInput
-      const fsSubmission = await submissionService.getById(submissionId);
-      if (!fsSubmission) {
-        return NextResponse.json(
-          { error: 'Submission not found' },
-          { status: 404 }
-        );
-      }
+      // New approach: Get submission from FastAPI with Firestore fallback
+      let submission;
       
-      const submission = convertFirestoreSubmission(fsSubmission);
+      try {
+        console.log('🔄 Fetching submission from FastAPI (primary)...');
+        const submissionResult = await apiService.getSubmission(submissionId);
+        if (submissionResult.data) {
+          submission = submissionResult.data;
+          console.log('✅ Submission fetched from FastAPI');
+        } else {
+          throw new Error('Submission not found in FastAPI');
+        }
+      } catch (error) {
+        console.warn('⚠️ FastAPI fetch failed, trying Firestore fallback:', error);
+        try {
+          const fsSubmission = await submissionService.getById(submissionId);
+          if (fsSubmission) {
+            submission = convertFirestoreSubmission(fsSubmission);
+            console.log('✅ Submission fetched from Firestore (fallback)');
+          } else {
+            return NextResponse.json(
+              { error: 'Submission not found in both FastAPI and Firestore' },
+              { status: 404 }
+            );
+          }
+        } catch (fallbackError) {
+          console.error('❌ Both FastAPI and Firestore failed:', fallbackError);
+          return NextResponse.json(
+            { error: 'Submission not found' },
+            { status: 404 }
+          );
+        }
+      }
       
       // Build analysisInput from submission data
       const builtAnalysisInput = {
-        conversationHistory: submission.history.map(h => ({
+        conversationHistory: submission.conversation_history.map((h: any) => ({
           question: h.question,
           answer: h.answer!,
-          preferredAnswer: h.preferredAnswer,
-          competency: h.competency
-        })).filter(h => h.answer), // Only include answered questions
+          preferredAnswer: h.preferredAnswer || h.bestResponseRationale,
+          competency: h.competency || h.assessedCompetency
+        })).filter((h: any) => h.answer), // Only include answered questions
         name: submission.candidateName,
         roleCategory: 'General', // Default since we don't store this in submission
         jobDescription: '', // Default since we don't store this in submission
@@ -56,16 +80,41 @@ export async function POST(request: NextRequest) {
       
       analysisResult = await analyzeConversation(builtAnalysisInput);
     } else if (type === 'sjt') {
-      // New approach: SJT analysis with proper scenario grouping
-      const fsSubmission = await submissionService.getById(submissionId);
-      if (!fsSubmission) {
-        return NextResponse.json(
-          { error: 'Submission not found' },
-          { status: 404 }
-        );
-      }
+      // SJT analysis with FastAPI and Firestore fallback
+      let submission;
       
-      const submission = convertFirestoreSubmission(fsSubmission);
+      try {
+        console.log('🔄 Fetching SJT submission from FastAPI (primary)...');
+        const submissionResult = await apiService.getSubmission(submissionId);
+        if (submissionResult.data) {
+          submission = submissionResult.data;
+          // Convert FastAPI format to expected format
+          submission.history = submission.conversation_history || [];
+          console.log('✅ SJT submission fetched from FastAPI');
+        } else {
+          throw new Error('SJT submission not found in FastAPI');
+        }
+      } catch (error) {
+        console.warn('⚠️ FastAPI fetch failed, trying Firestore fallback:', error);
+        try {
+          const fsSubmission = await submissionService.getById(submissionId);
+          if (fsSubmission) {
+            submission = convertFirestoreSubmission(fsSubmission);
+            console.log('✅ SJT submission fetched from Firestore (fallback)');
+          } else {
+            return NextResponse.json(
+              { error: 'SJT submission not found in both FastAPI and Firestore' },
+              { status: 404 }
+            );
+          }
+        } catch (fallbackError) {
+          console.error('❌ Both FastAPI and Firestore failed for SJT:', fallbackError);
+          return NextResponse.json(
+            { error: 'SJT submission not found' },
+            { status: 404 }
+          );
+        }
+      }
       
       console.log(`🤖 Analyzing SJT submission with ${submission.history.length} entries...`);
       
@@ -697,13 +746,37 @@ OVERALL ASSESSMENT: ${strongResponses.length > improvementAreas.length ?
     
     console.log('✅ AI analysis completed, updating submission...');
     
-    // Update the submission with the new analysis result
-    await submissionService.update(submissionId, {
-      report: analysisResult,
-      analysisCompleted: true,
-      analysisCompletedAt: new Date(),
-      ...(forceRegenerate && { regeneratedAt: new Date() })
-    });
+    // Update the submission with the new analysis result - try FastAPI first, then Firestore
+    try {
+      console.log('🔄 Updating submission via FastAPI (primary)...');
+      const updateData = {
+        analysis_result: analysisResult,
+        analysis_completed: true,
+        analysis_completed_at: new Date().toISOString(),
+        ...(forceRegenerate && { regenerated_at: new Date().toISOString() })
+      };
+      
+      const updateResult = await apiService.updateSubmission(submissionId, updateData);
+      if (updateResult.data) {
+        console.log('✅ Submission updated via FastAPI');
+      } else {
+        throw new Error('FastAPI update failed');
+      }
+    } catch (error) {
+      console.warn('⚠️ FastAPI update failed, trying Firestore fallback:', error);
+      try {
+        await submissionService.update(submissionId, {
+          report: analysisResult,
+          analysisCompleted: true,
+          analysisCompletedAt: new Date(),
+          ...(forceRegenerate && { regeneratedAt: new Date() })
+        });
+        console.log('✅ Submission updated via Firestore (fallback)');
+      } catch (fallbackError) {
+        console.error('❌ Both FastAPI and Firestore update failed:', fallbackError);
+        // Continue anyway since analysis was successful
+      }
+    }
     
     console.log(`✅ Submission ${submissionId} updated with AI analysis${forceRegenerate ? ' (regenerated)' : ''}`);
     

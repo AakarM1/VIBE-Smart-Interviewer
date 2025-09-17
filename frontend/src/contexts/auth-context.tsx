@@ -23,6 +23,11 @@ interface AuthContextType {
   getUserAttempts: (testType: 'SJT' | 'JDT') => Promise<number>;
   getLatestUserSubmission: (testType: 'SJT' | 'JDT') => Promise<any | null>;
   getUsers: () => Promise<User[]>;
+  saveSubmission: (submission: any) => Promise<any>;
+  getSubmissions: () => Promise<any[]>;
+  getSubmissionById: (id: string) => Promise<any | null>;
+  deleteSubmission: (id: string) => Promise<void>;
+  canUserTakeTest: (testType: 'SJT' | 'JDT', maxAttempts: number) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -206,6 +211,69 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } catch (e) {
         console.error('Failed to get users:', e);
         return [];
+      }
+    },
+    saveSubmission: async (submission: any) => {
+      try {
+        console.log('💾 Saving submission via FastAPI:', submission);
+        const result = await apiService.createSubmission(submission);
+        if (result.data) {
+          console.log('✅ Submission saved successfully:', result.data.id);
+          return result.data;
+        }
+        throw new Error('Failed to save submission');
+      } catch (error) {
+        console.error('❌ Error saving submission:', error);
+        throw error;
+      }
+    },
+    getSubmissions: async () => {
+      try {
+        console.log('📖 Fetching submissions via FastAPI');
+        const result = await apiService.getSubmissions();
+        console.log(`✅ Fetched ${result.data?.length || 0} submissions`);
+        return result.data || [];
+      } catch (error) {
+        console.error('❌ Error fetching submissions:', error);
+        return [];
+      }
+    },
+    getSubmissionById: async (id: string) => {
+      try {
+        console.log('📖 Fetching submission by ID via FastAPI:', id);
+        const result = await apiService.getSubmission(id);
+        if (result.data) {
+          console.log('✅ Submission fetched successfully');
+          return result.data;
+        }
+        return null;
+      } catch (error) {
+        console.error('❌ Error fetching submission:', error);
+        return null;
+      }
+    },
+    deleteSubmission: async (id: string) => {
+      try {
+        console.log('🗑️ Deleting submission via FastAPI:', id);
+        await apiService.deleteSubmission(id);
+        console.log('✅ Submission deleted successfully');
+      } catch (error) {
+        console.error('❌ Error deleting submission:', error);
+        throw error;
+      }
+    },
+    canUserTakeTest: async (testType: 'SJT' | 'JDT', maxAttempts: number) => {
+      try {
+        if (!user) return false;
+        const attempts = await apiService.getSubmissions({ 
+          user_id: user.id, 
+          test_type: testType 
+        });
+        const attemptCount = attempts.data?.length || 0;
+        return attemptCount < maxAttempts;
+      } catch (error) {
+        console.error('Error checking test attempts:', error);
+        return true; // Allow test if check fails
       }
     },
   };

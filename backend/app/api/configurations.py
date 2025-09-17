@@ -24,8 +24,10 @@ async def create_configuration(
 ):
     """Create or update configuration (admin only)"""
     
-    # Determine tenant_id
+    # Determine tenant_id (ensure string format for SQLite)
     tenant_id = config_data.tenant_id or current_user.tenant_id
+    if tenant_id:
+        tenant_id = str(tenant_id)
     
     # Only superadmin can create system-wide configurations
     if config_data.scope == "system" and current_user.role != "superadmin":
@@ -47,13 +49,13 @@ async def create_configuration(
         existing_config.is_active = False
         existing_config.version += 1
     
-    # Create new configuration
+    # Create new configuration (convert UUIDs to strings for SQLite compatibility)
     new_config = Configuration(
-        tenant_id=tenant_id,
+        tenant_id=str(tenant_id) if tenant_id else None,
         config_type=config_data.config_type,
         scope=config_data.scope,
         config_data=config_data.config_data,
-        created_by=current_user.id,
+        created_by=str(current_user.id),
         version=1 if not existing_config else existing_config.version + 1
     )
     
@@ -80,7 +82,7 @@ async def list_configurations(
         # Filter by tenant for non-superadmin users
         if current_user.role != "superadmin":
             query = query.filter(
-                (Configuration.tenant_id == current_user.tenant_id) |
+                (Configuration.tenant_id == str(current_user.tenant_id)) |
                 (Configuration.scope == "system")
             )
         
@@ -113,7 +115,7 @@ async def get_configuration(
         )
     
     with UserContext(db, current_user):
-        configuration = db.query(Configuration).filter(Configuration.id == config_uuid).first()
+        configuration = db.query(Configuration).filter(Configuration.id == str(config_uuid)).first()
     
     if not configuration:
         raise HTTPException(
@@ -147,8 +149,8 @@ async def get_configuration_by_type(
             detail="Invalid configuration type"
         )
     
-    # Determine which tenant to query
-    target_tenant_id = current_user.tenant_id
+    # Determine which tenant to query (ensure string format for SQLite)
+    target_tenant_id = str(current_user.tenant_id) if current_user.tenant_id else None
     if tenant_id:
         if current_user.role != "superadmin":
             raise HTTPException(
@@ -156,7 +158,7 @@ async def get_configuration_by_type(
                 detail="Access denied"
             )
         try:
-            target_tenant_id = uuid.UUID(tenant_id)
+            target_tenant_id = str(uuid.UUID(tenant_id))
         except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -200,7 +202,7 @@ async def update_configuration(
         )
     
     with UserContext(db, current_user):
-        configuration = db.query(Configuration).filter(Configuration.id == config_uuid).first()
+        configuration = db.query(Configuration).filter(Configuration.id == str(config_uuid)).first()
     
     if not configuration:
         raise HTTPException(
@@ -243,7 +245,7 @@ async def delete_configuration(
         )
     
     with UserContext(db, current_user):
-        configuration = db.query(Configuration).filter(Configuration.id == config_uuid).first()
+        configuration = db.query(Configuration).filter(Configuration.id == str(config_uuid)).first()
     
     if not configuration:
         raise HTTPException(

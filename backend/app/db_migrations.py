@@ -100,8 +100,64 @@ def migrate_assignment_tables(engine: Engine):
             """))
 
 
+def migrate_enhanced_media_and_submissions(engine: Engine):
+    """Add enhanced columns for better media organization and submission tracking."""
+    
+    # Enhanced MediaFile columns
+    media_file_table = "media_files"
+    
+    # Add new columns to media_files if missing
+    if _column_missing(engine, media_file_table, "scenario_id"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {media_file_table} ADD COLUMN scenario_id VARCHAR(100)"))
+    
+    if _column_missing(engine, media_file_table, "is_follow_up"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {media_file_table} ADD COLUMN is_follow_up BOOLEAN DEFAULT 0"))
+    
+    if _column_missing(engine, media_file_table, "follow_up_sequence"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {media_file_table} ADD COLUMN follow_up_sequence INTEGER DEFAULT 0"))
+    
+    if _column_missing(engine, media_file_table, "firebase_path"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {media_file_table} ADD COLUMN firebase_path TEXT"))
+    
+    if _column_missing(engine, media_file_table, "transcription_status"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {media_file_table} ADD COLUMN transcription_status VARCHAR(50) DEFAULT 'pending'"))
+    
+    if _column_missing(engine, media_file_table, "transcription_text"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {media_file_table} ADD COLUMN transcription_text TEXT"))
+    
+    # Update storage_provider default to firebase for existing records
+    with engine.connect() as conn:
+        conn.execute(text(f"UPDATE {media_file_table} SET storage_provider = 'firebase' WHERE storage_provider = 'local'"))
+    
+    # Enhanced Submission columns
+    submissions_table = "submissions"
+    
+    if _column_missing(engine, submissions_table, "total_questions"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {submissions_table} ADD COLUMN total_questions INTEGER DEFAULT 0"))
+    
+    if _column_missing(engine, submissions_table, "base_questions"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {submissions_table} ADD COLUMN base_questions INTEGER DEFAULT 0"))
+    
+    if _column_missing(engine, submissions_table, "follow_up_questions"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {submissions_table} ADD COLUMN follow_up_questions INTEGER DEFAULT 0"))
+    
+    if _column_missing(engine, submissions_table, "test_configuration"):
+        with engine.connect() as conn:
+            conn.execute(text(f"ALTER TABLE {submissions_table} ADD COLUMN test_configuration JSON"))
+
+
 def run_migrations(engine: Engine):
     """Run all lightweight migrations."""
     # Add any future migrations here
     migrate_competency_dictionary(engine)
     migrate_assignment_tables(engine)
+    migrate_enhanced_media_and_submissions(engine)
