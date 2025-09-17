@@ -92,11 +92,23 @@ def init_database():
     """Initialize database with tables and default data"""
     from app.models import Base, User, Tenant
     import uuid
+    from sqlalchemy import inspect
     
     logger.info("Initializing database...")
     
-    # Create all tables
+    # Create all tables (idempotent)
     Base.metadata.create_all(bind=engine)
+
+    # Lightweight schema verification (additive safety net, not a full migration system)
+    try:
+        inspector = inspect(engine)
+        required_tables = [t.name for t in Base.metadata.sorted_tables]
+        missing = [t for t in required_tables if t not in inspector.get_table_names()]
+        if missing:
+            logger.warning(f"Missing tables detected after create_all: {missing}; attempting creation again")
+            Base.metadata.create_all(bind=engine, tables=[t for t in Base.metadata.sorted_tables if t.name in missing])
+    except Exception as schema_err:
+        logger.error(f"Schema verification failed: {schema_err}")
     
     # Create default data
     db = SessionLocal()
@@ -181,7 +193,7 @@ def run_migrations():
     # For now, we'll just ensure all tables exist
     from app.models import Base
     Base.metadata.create_all(bind=engine)
-    logger.info("Database migrations completed")
+    logger.info("Database migrations completed (create_all idempotent run)")
 
 # Backup utilities
 def backup_database(backup_path: str = None):

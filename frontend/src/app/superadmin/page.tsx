@@ -16,15 +16,15 @@ import {
   Search,
   Home,
   Database,
-  
+  Target,
+  UserCheck,
   ChevronDown
 } from 'lucide-react';
 import { useAuth, ProtectedRoute } from '@/contexts/auth-context';
 import CompanyManagement from '@/components/superadmin/CompanyManagement';
 import UserManagement from '@/components/superadmin/UserManagement';
 import CompetencyManagement from '@/components/superadmin/CompetencyManagement';
-import ContentManagement from '@/components/superadmin/ContentManagement';
-import ReportsAnalytics from '@/components/superadmin/ReportsAnalytics';
+import UserAssignmentManagement from '@/components/superadmin/UserAssignmentManagement';
 
 // Define navigation items for the sidebar
 const navigationItems = [
@@ -44,37 +44,25 @@ const navigationItems = [
     id: 'users',
     label: 'User Management',
     icon: Users,
-    description: 'Manage users across all tenants'
+    description: 'Manage user accounts and permissions'
   },
   {
-    id: 'content',
-    label: 'Content Management',
-    icon: FileText,
-    description: 'Manage test content, questions, and scenarios'
+    id: 'assignments',
+    label: 'User Assignments',
+    icon: UserCheck,
+    description: 'Assign users to admins'
   },
   {
     id: 'competencies',
     label: 'Competencies',
     icon: Award,
-    description: 'Manage competency frameworks and assessments'
-  },
-  {
-    id: 'reports',
-    label: 'Reports & Analytics',
-    icon: BarChart3,
-    description: 'View comprehensive reports and analytics'
+    description: 'Define and manage skill competencies'
   },
   {
     id: 'settings',
-    label: 'Platform Settings',
+    label: 'System Settings',
     icon: Settings,
     description: 'Configure platform-wide settings'
-  },
-  {
-    id: 'audit',
-    label: 'Audit & Monitoring',
-    icon: Shield,
-    description: 'Security logs and system monitoring'
   }
 ];
 
@@ -206,11 +194,9 @@ function SuperAdminDashboard() {
           {activeSection === 'overview' && <OverviewSection />}
           {activeSection === 'companies' && <CompaniesSection />}
           {activeSection === 'users' && <UsersSection />}
-          {activeSection === 'content' && <ContentSection />}
+          {activeSection === 'assignments' && <AssignmentsSection />}
           {activeSection === 'competencies' && <CompetenciesSection />}
-          {activeSection === 'reports' && <ReportsSection />}
           {activeSection === 'settings' && <SettingsSection />}
-          {activeSection === 'audit' && <AuditSection />}
         </main>
       </div>
     </div>
@@ -326,16 +312,12 @@ function UsersSection() {
   return <UserManagement />;
 }
 
-function ContentSection() {
-  return <ContentManagement />;
+function AssignmentsSection() {
+  return <UserAssignmentManagement />;
 }
 
 function CompetenciesSection() {
   return <CompetencyManagement />;
-}
-
-function ReportsSection() {
-  return <ReportsAnalytics />;
 }
 
 function SettingsSection() {
@@ -343,15 +325,6 @@ function SettingsSection() {
     <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
       <h3 className="text-lg font-semibold text-gray-900 mb-4">Platform Settings</h3>
       <p className="text-gray-600">Platform settings interface will be implemented here.</p>
-    </div>
-  );
-}
-
-function AuditSection() {
-  return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Audit & Monitoring</h3>
-      <p className="text-gray-600">Audit and monitoring interface will be implemented here.</p>
     </div>
   );
 }

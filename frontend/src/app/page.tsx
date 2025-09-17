@@ -51,7 +51,9 @@ const AssessmentCard = ({
   currentAttempts = 0,
   maxAttempts = 1,
   hasReport = false,
-  onViewReport
+  onViewReport,
+  notConfigured = false,
+  inProgress = false
 }: { 
   title: string; 
   icon: React.ReactNode; 
@@ -66,6 +68,8 @@ const AssessmentCard = ({
   maxAttempts?: number;
   hasReport?: boolean;
   onViewReport?: () => void;
+  notConfigured?: boolean;
+  inProgress?: boolean;
 }) => (
     <div className="border border-gray-200 flex flex-col rounded-xl overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300">
         <div className={`p-4 flex-grow ${isDisabled ? 'opacity-50 bg-gray-50' : ''}`}>
@@ -104,7 +108,7 @@ const AssessmentCard = ({
           <div className="bg-gray-50">
             <div className="w-full bg-gray-400 text-white font-bold py-3 flex items-center justify-center cursor-not-allowed">
               <X className="mr-2 h-5 w-5" />
-              Maximum attempts reached
+              {notConfigured ? 'Configuration pending' : inProgress ? 'Attempt already in progress' : currentAttempts >= maxAttempts ? 'Maximum attempts reached' : 'Unavailable'}
             </div>
             {hasReport && (
               <button 
@@ -140,11 +144,10 @@ const AssessmentCard = ({
 
 function SelectionPage() {
   const router = useRouter();
-  const { getUserAttempts, getLatestUserSubmission } = useAuth();
-  const [isJdtEnabled, setIsJdtEnabled] = useState(true);
-  const [isSjtEnabled, setIsSjtEnabled] = useState(true);
-  const [isJdtConfigured, setIsJdtConfigured] = useState(false);
-  const [isSjtConfigured, setIsSjtConfigured] = useState(false);
+  const { getUserAttempts, getLatestUserSubmission, user } = useAuth();
+  // Availability state from backend
+  const [jdtAvailability, setJdtAvailability] = useState<any>(null);
+  const [sjtAvailability, setSjtAvailability] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [sjtAttempts, setSjtAttempts] = useState(0);
   const [jdtAttempts, setJdtAttempts] = useState(0);
@@ -153,40 +156,51 @@ function SelectionPage() {
   const [sjtQuestionCount, setSjtQuestionCount] = useState(5);
   const [jdtQuestionCount, setJdtQuestionCount] = useState(5);
   
-  const MAX_ATTEMPTS = 1; // Maximum attempts per test
+  const MAX_ATTEMPTS_FALLBACK = 1; // Fallback if backend not ready
 
   useEffect(() => {
     const loadConfiguration = async () => {
       try {
         console.log('🔧 Loading configuration from database...');
         
-        const globalSettings = await configurationService.getGlobalSettings();
-        if (globalSettings) {
-          setIsJdtEnabled(globalSettings.isJdtEnabled ?? true);
-          setIsSjtEnabled(globalSettings.isSjtEnabled ?? true);
+        // Availability fetch helper
+        const fetchAvailability = async (testType: 'JDT' | 'SJT') => {
+          const token = localStorage.getItem('access_token');
+            const res = await fetch(`/api/v1/tests/availability?test_type=${testType}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (!res.ok) return null;
+            return res.json();
+        };
+
+        const [jdtAvail, sjtAvail] = await Promise.all([
+          fetchAvailability('JDT'),
+          fetchAvailability('SJT')
+        ]);
+        setJdtAvailability(jdtAvail);
+        setSjtAvailability(sjtAvail);
+
+        if (sjtAvail) {
+          setSjtAttempts(sjtAvail.attempts_used);
+        } else {
+          const sjtAttemptsCount = await getUserAttempts('SJT');
+          setSjtAttempts(sjtAttemptsCount);
         }
-        
+        if (jdtAvail) {
+          setJdtAttempts(jdtAvail.attempts_used);
+        } else {
+          const jdtAttemptsCount = await getUserAttempts('JDT');
+          setJdtAttempts(jdtAttemptsCount);
+        }
+        // Derive question counts from configuration (still needed for UI numbers)
         const jdtConfig = await configurationService.getJDTConfig();
         const sjtConfig = await configurationService.getSJTConfig();
-        
-        setIsJdtConfigured(!!jdtConfig);
-        setIsSjtConfigured(!!sjtConfig);
-        
-        // Load question counts from configurations
-        if (sjtConfig?.settings?.numberOfQuestions) {
-          setSjtQuestionCount(sjtConfig.settings.numberOfQuestions);
-        }
+        if (sjtConfig?.settings?.numberOfQuestions) setSjtQuestionCount(sjtConfig.settings.numberOfQuestions);
         if (jdtConfig?.settings?.numberOfQuestions) {
           const manualQuestions = jdtConfig.settings.numberOfQuestions || 0;
           const aiQuestions = jdtConfig.settings.aiGeneratedQuestions || 0;
           setJdtQuestionCount(manualQuestions + aiQuestions);
         }
-        
-        // Load attempt counts
-        const sjtAttemptsCount = await getUserAttempts('SJT');
-        const jdtAttemptsCount = await getUserAttempts('JDT');
-        setSjtAttempts(sjtAttemptsCount);
-        setJdtAttempts(jdtAttemptsCount);
         
         // Check for existing reports
         const sjtSubmission = await getLatestUserSubmission('SJT');
@@ -194,9 +208,8 @@ function SelectionPage() {
         setHasSjtReport(!!sjtSubmission);
         setHasJdtReport(!!jdtSubmission);
         
-        console.log('✅ Configuration loaded from database');
-        console.log(`📊 Attempts - SJT: ${sjtAttemptsCount}/${MAX_ATTEMPTS}, JDT: ${jdtAttemptsCount}/${MAX_ATTEMPTS}`);
-        console.log(`📄 Reports - SJT: ${!!sjtSubmission}, JDT: ${!!jdtSubmission}`);
+  console.log('✅ Availability & configuration loaded from backend');
+  console.log(`📄 Reports - SJT: ${!!sjtSubmission}, JDT: ${!!jdtSubmission}`);
       } catch (error) {
         console.error('❌ Error loading configuration from database:', error);
       } finally {
@@ -205,10 +218,11 @@ function SelectionPage() {
     };
 
     loadConfiguration();
-  }, [getUserAttempts]);
+  }, [getUserAttempts, user]);
 
-  const showJDT = isJdtEnabled && isJdtConfigured;
-  const showSJT = isSjtEnabled && isSjtConfigured;
+  // Show card if assigned regardless of configuration; disable start until can_start true
+  const showJDT = !!(jdtAvailability && jdtAvailability.assigned);
+  const showSJT = !!(sjtAvailability && sjtAvailability.assigned);
 
   const handleViewSjtReport = () => {
     router.push('/report/SJT');
@@ -237,9 +251,9 @@ function SelectionPage() {
                 {!loading && !showJDT && !showSJT ? (
                     <div className="text-center py-10 px-6 bg-gray-50 rounded-lg">
                         <Info className="mx-auto h-12 w-12 text-gray-400" />
-                        <h3 className="mt-2 text-xl font-medium text-gray-900">No Assessments Available</h3>
+                        <h3 className="mt-2 text-xl font-medium text-gray-900">No Tests Assigned</h3>
                         <p className="mt-1 text-base text-gray-500">
-                            There are no assessments assigned to you at this time. Please contact your administrator.
+                            No tests have been assigned to you at this time. Please contact your administrator to request test access.
                         </p>
                     </div>
                 ) : (
@@ -252,13 +266,15 @@ function SelectionPage() {
                                 howItWorks="Each question is 1 situation with response choices. There is no right or wrong response, so choose a response based on what you would really do and not what sounds ideal."
                                 remember="Finish all questions in 1 attempt. If get logged out you will need to reattempt all questions again."
                                 questions={sjtQuestionCount.toString().padStart(2, '0')}
-                                attempts={`${sjtAttempts}/${MAX_ATTEMPTS}`}
+                                attempts={`${sjtAttempts}/${sjtAvailability?.max_attempts ?? MAX_ATTEMPTS_FALLBACK}`}
                                 link="/sjt"
-                                isDisabled={sjtAttempts >= MAX_ATTEMPTS}
+                isDisabled={!sjtAvailability?.can_start}
                                 currentAttempts={sjtAttempts}
-                                maxAttempts={MAX_ATTEMPTS}
+                                maxAttempts={sjtAvailability?.max_attempts ?? MAX_ATTEMPTS_FALLBACK}
                                 hasReport={hasSjtReport}
                                 onViewReport={handleViewSjtReport}
+                notConfigured={sjtAvailability ? !sjtAvailability.configured : false}
+                inProgress={false /* could add flag if availability exposes it later */}
                             />
                         )}
                         {showJDT && (
@@ -269,13 +285,15 @@ function SelectionPage() {
                                 howItWorks="Start by understanding the role requirements. Then respond to questions designed to assess your fit and skills for that role."
                                 remember="Once you finish the analysis and start responding to questions, you need to finish all questions in 1 attempt."
                                 questions={jdtQuestionCount.toString().padStart(2, '0')}
-                                attempts={`${jdtAttempts}/${MAX_ATTEMPTS}`}
+                                attempts={`${jdtAttempts}/${jdtAvailability?.max_attempts ?? MAX_ATTEMPTS_FALLBACK}`}
                                 link="/interview"
-                                isDisabled={jdtAttempts >= MAX_ATTEMPTS}
+                isDisabled={!jdtAvailability?.can_start}
                                 currentAttempts={jdtAttempts}
-                                maxAttempts={MAX_ATTEMPTS}
+                                maxAttempts={jdtAvailability?.max_attempts ?? MAX_ATTEMPTS_FALLBACK}
                                 hasReport={hasJdtReport}
                                 onViewReport={handleViewJdtReport}
+                notConfigured={jdtAvailability ? !jdtAvailability.configured : false}
+                inProgress={false}
                             />
                         )}
                     </div>

@@ -385,14 +385,25 @@ async def list_users(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
-    """List users (admin only)"""
-    from app.models import User
+    """List users (admin sees only assigned users, superadmin sees all)"""
+    from app.models import User, UserAssignment
     
     query = db.query(User)
     
-    # Non-superadmin users can only see users in their tenant
-    if current_user.role != "superadmin":
+    if current_user.role == "superadmin":
+        # Superadmin can see all users
         query = query.filter(User.tenant_id == current_user.tenant_id)
+    elif current_user.role == "admin":
+        # Admin can only see users assigned to them
+        assigned_user_ids = db.query(UserAssignment.user_id).filter(
+            UserAssignment.admin_id == current_user.id,
+            UserAssignment.is_active == True
+        ).subquery()
+        
+        query = query.filter(User.id.in_(assigned_user_ids))
+    else:
+        # Candidates see only themselves (shouldn't reach here due to require_admin)
+        query = query.filter(User.id == current_user.id)
     
     users = query.offset(skip).limit(limit).all()
     return users

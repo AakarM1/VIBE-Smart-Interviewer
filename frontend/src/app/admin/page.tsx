@@ -5,7 +5,7 @@ import React, { ReactNode, useState, useEffect } from 'react';
 import { useAuth, ProtectedRoute } from '@/contexts/auth-context';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Briefcase, LogOut, FileSearch, Users, BadgeCheck, Settings, MessageSquare, Mic, Type, Video, Eye, EyeOff, Languages, PlusCircle, Trash2 } from 'lucide-react';
+import { FileText, Briefcase, LogOut, FileSearch, Users, BadgeCheck, Settings, MessageSquare, Mic, Type, Video, Eye, EyeOff, Languages, PlusCircle, Trash2, Target } from 'lucide-react';
 import Link from 'next/link';
 import Header from '@/components/header';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { configurationService } from '@/lib/config-service';
+import TestAssignmentManagement from '@/components/admin/TestAssignmentManagement';
 
 interface GlobalSettings {
     replyMode: InterviewMode;
@@ -295,6 +296,7 @@ const AdminDashboard = () => {
                         description="Add, view, and manage candidate and admin user accounts."
                     />
                 </Link>
+                 <TestAssignmentCard />
                  <Link href="/admin/verdict" className="block hover:no-underline col-span-1 md:col-span-2 lg:col-span-1">
                     <AdminConfigCard
                         icon={<BadgeCheck className="h-8 w-8 text-primary" />}
@@ -305,6 +307,41 @@ const AdminDashboard = () => {
             </div>
         </div>
       </>
+    );
+};
+
+const TestAssignmentCard = () => {
+    const [showModal, setShowModal] = useState(false);
+
+    return (
+        <>
+            <Card 
+                className="bg-card border-border hover:border-primary/50 transition-colors h-full flex flex-col hover:shadow-lg cursor-pointer"
+                onClick={() => setShowModal(true)}
+            >
+                <CardHeader className="flex-grow">
+                    <div className="mb-4">
+                        <Target className="h-8 w-8 text-primary" />
+                    </div>
+                    <CardTitle>Test Assignments</CardTitle>
+                    <CardDescription>Assign tests to your users and manage test access.</CardDescription>
+                </CardHeader>
+            </Card>
+            
+            {showModal && (
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-background border rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
+                        <div className="p-6">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-2xl font-bold">Test Assignment Management</h2>
+                                <Button variant="ghost" onClick={() => setShowModal(false)}>×</Button>
+                            </div>
+                            <TestAssignmentManagement />
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 };
 
@@ -332,7 +369,7 @@ const AdminConfigCard = ({ icon, title, description }: AdminConfigCardProps) => 
 
 const AdminPage = () => {
   return (
-    <ProtectedRoute adminOnly>
+    <ProtectedRoute allowedRoles={['admin', 'superadmin']}>
       <AdminDashboard />
     </ProtectedRoute>
   );

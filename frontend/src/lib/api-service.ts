@@ -334,12 +334,12 @@ class FastAPIService {
 
   // Configuration management
   async getConfiguration(type: string): Promise<ApiResponse<any>> {
-    // Configurations API is under /api/v1
-    return this.request<any>(`/api/v1/configurations/${type}`);
+    // Use explicit type route to avoid UUID/id route collision
+    return this.request<any>(`/api/v1/configurations/type/${type}`);
   }
 
   async saveConfiguration(type: string, configData: any): Promise<ApiResponse<any>> {
-    // Backend uses POST for saving configuration types (sjt, jdt, global)
+    // Backend exposes dedicated endpoints /configurations/{type} for POST (sjt, jdt, global)
     return this.request<any>(`/api/v1/configurations/${type}`, {
       method: 'POST',
       body: JSON.stringify(configData),

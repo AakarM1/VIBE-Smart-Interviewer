@@ -6,9 +6,9 @@ Multi-tenant assessment platform with role-based access control
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlalchemy import (
-    Column, String, Integer, Boolean, DateTime, Text, 
+    Column, String, Integer, Boolean, DateTime, Text,
     ForeignKey, CheckConstraint, UniqueConstraint, JSON,
-    DECIMAL, BIGINT
+    DECIMAL, BIGINT, Index
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -74,7 +74,6 @@ class User(Base, TimestampMixin):
         CheckConstraint("role IN ('superadmin', 'admin', 'candidate')", name='check_user_role'),
         UniqueConstraint('candidate_id', 'client_name', name='unique_candidate_per_client'),
     )
-    
     # Relationships
     tenant = relationship("Tenant", back_populates="users")
     submissions = relationship("Submission", back_populates="user", cascade="all, delete-orphan")
@@ -95,7 +94,6 @@ class Submission(Base, TimestampMixin):
     candidate_name = Column(String(255), nullable=False)
     candidate_id = Column(String(100), nullable=False)
     test_type = Column(String(10), nullable=False)
-    
     # Multi-language support
     candidate_language = Column(String(10), default='en')
     ui_language = Column(String(10), default='en')
@@ -278,6 +276,95 @@ class UserSession(Base, TimestampMixin):
     # Relationships
     user = relationship("User", back_populates="user_sessions")
 
+class UserAssignment(Base, TimestampMixin):
+    """Assignment of users to admins by superadmin"""
+    __tablename__ = 'user_assignments'
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    admin_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(String(36), ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False)
+    
+    # Assignment metadata
+    assigned_by = Column(String(36), ForeignKey('users.id'), nullable=False)  # superadmin who made assignment
+    is_active = Column(Boolean, default=True)
+    notes = Column(Text)
+    
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint('user_id', 'admin_id', name='ux_user_admin_assignment'),
+    )
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], backref="assigned_to_admin")
+    admin = relationship("User", foreign_keys=[admin_id], backref="assigned_users")
+    assigner = relationship("User", foreign_keys=[assigned_by])
+    tenant = relationship("Tenant")
+
+class TestAssignment(Base, TimestampMixin):
+    """Assignment of specific tests to users by admin"""
+    __tablename__ = 'test_assignments'
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    admin_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    tenant_id = Column(String(36), ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False)
+    
+    # Test details
+    test_type = Column(String(10), nullable=False)  # 'SJT' or 'JDT'
+    due_date = Column(DateTime(timezone=True))
+    max_attempts = Column(Integer, default=3)
+    
+    # Status tracking
+    status = Column(String(20), default='assigned')  # assigned, started, completed, overdue
+    assigned_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
+    
+    # Configuration overrides
+    custom_config = Column(JSON)  # Optional test-specific configuration
+    notes = Column(Text)
+    
+    # Constraints
+    __table_args__ = (
+        CheckConstraint("test_type IN ('JDT', 'SJT')", name='check_assignment_test_type'),
+        CheckConstraint("status IN ('assigned', 'started', 'completed', 'overdue', 'cancelled')", name='check_assignment_status'),
+        UniqueConstraint('user_id', 'test_type', name='ux_user_test_assignment'),  # One assignment per test type per user
+        Index('ix_test_assignments_user_test', 'user_id', 'test_type'),
+    )
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id], backref="test_assignments")
+    admin = relationship("User", foreign_keys=[admin_id])
+    tenant = relationship("Tenant")
+
+class TestAttempt(Base, TimestampMixin):
+    """Discrete attempt of a test (SJT/JDT) by a user"""
+    __tablename__ = 'test_attempts'
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    test_type = Column(String(10), nullable=False)  # JDT or SJT
+    assignment_id = Column(String(36), ForeignKey('test_assignments.id', ondelete='SET NULL'))
+    attempt_number = Column(Integer, nullable=False, default=1)
+    status = Column(String(20), default='in_progress')  # in_progress, completed, cancelled
+    started_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True))
+    max_questions = Column(Integer)
+    questions_snapshot = Column(JSON)  # Immutable list of questions served to user
+    attempt_metadata = Column(JSON)  # roleCategory, config version, etc.
+
+    __table_args__ = (
+        CheckConstraint("test_type IN ('JDT','SJT')", name='check_attempt_test_type'),
+        CheckConstraint("status IN ('in_progress','completed','cancelled')", name='check_attempt_status'),
+        UniqueConstraint('user_id', 'test_type', 'attempt_number', name='ux_user_test_attempt_number'),
+        Index('ix_test_attempts_user_test_status', 'user_id', 'test_type', 'status'),
+        Index('ix_test_attempts_user_test_number', 'user_id', 'test_type', 'attempt_number'),
+    )
+
+    user = relationship("User")
+    assignment = relationship("TestAssignment")
+
 class AuditLog(Base):
     """System audit trail"""
     __tablename__ = 'audit_logs'
@@ -431,6 +518,110 @@ class RefreshTokenRequest(BaseModel):
 # =====================================================
 # UTILITY FUNCTIONS
 # =====================================================
+
+# Assignment Pydantic models
+class UserAssignmentBase(BaseModel):
+    user_id: uuid.UUID
+    admin_id: uuid.UUID
+    notes: Optional[str] = None
+
+class UserAssignmentCreate(UserAssignmentBase):
+    tenant_id: Optional[uuid.UUID] = None
+
+class UserAssignmentResponse(UserAssignmentBase):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    assigned_by: uuid.UUID
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class TestAssignmentBase(BaseModel):
+    user_id: uuid.UUID
+    test_type: str = Field(..., pattern="^(JDT|SJT)$")
+    due_date: Optional[datetime] = None
+    max_attempts: int = 3
+    custom_config: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = None
+
+class TestAssignmentCreate(TestAssignmentBase):
+    pass
+
+class TestAssignmentUpdate(BaseModel):
+    status: Optional[str] = Field(None, pattern="^(assigned|started|completed|overdue|cancelled)$")
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    notes: Optional[str] = None
+
+class TestAssignmentResponse(TestAssignmentBase):
+    id: uuid.UUID
+    admin_id: uuid.UUID
+    tenant_id: uuid.UUID
+    status: str
+    assigned_at: datetime
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Test attempt Pydantic models
+class TestAttemptBase(BaseModel):
+    test_type: str = Field(..., pattern="^(JDT|SJT)$")
+    attempt_number: int
+    status: str
+    started_at: datetime
+    completed_at: Optional[datetime]
+    max_questions: Optional[int]
+
+class TestAttemptResponse(TestAttemptBase):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    assignment_id: Optional[uuid.UUID]
+    questions_snapshot: Optional[List[Any]]
+    attempt_metadata: Optional[Dict[str, Any]]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class StartAttemptRequest(BaseModel):
+    test_type: str = Field(..., pattern="^(JDT|SJT)$")
+    role_category: Optional[str] = None  # For JDT selection
+
+class StartAttemptResponse(BaseModel):
+    attempt: TestAttemptResponse
+    questions: List[Dict[str, Any]]
+    can_start: bool
+    remaining_attempts: int
+
+class TestAvailabilityResponse(BaseModel):
+    test_type: str
+    assigned: bool
+    configured: bool
+    attempts_used: int
+    max_attempts: int
+    can_start: bool
+    assignment_status: Optional[str]
+
+# Bulk assignment requests
+class BulkUserAssignmentRequest(BaseModel):
+    user_ids: List[uuid.UUID]
+    admin_id: uuid.UUID
+    notes: Optional[str] = None
+
+class BulkTestAssignmentRequest(BaseModel):
+    user_ids: List[uuid.UUID]
+    test_types: List[str] = Field(..., description="List of test types to assign (JDT, SJT)")
+    due_date: Optional[datetime] = None
+    max_attempts: int = 3
+    notes: Optional[str] = None
 
 # Competency Pydantic models
 class CompetencyBase(BaseModel):

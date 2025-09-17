@@ -27,8 +27,11 @@ export default function CompetencyManagement() {
     competency_code: "",
     competency_name: "",
     competency_description: "",
+    category: "",
     is_active: true,
   });
+  const [categoryQuery, setCategoryQuery] = useState("");
+  const [showCategorySuggestions, setShowCategorySuggestions] = useState(false);
 
   const baseURL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -73,8 +76,9 @@ export default function CompetencyManagement() {
         const body = await res.json().catch(() => ({} as any));
         throw new Error(body?.detail || `Create failed (${res.status})`);
       }
-      await load();
-  setForm({ competency_code: "", competency_name: "", competency_description: "", is_active: true });
+    await load();
+    setForm({ competency_code: "", competency_name: "", competency_description: "", category: "", is_active: true });
+    setCategoryQuery("");
     } catch (e: any) {
       setError(e.message || "Failed to create");
     }
@@ -111,7 +115,7 @@ export default function CompetencyManagement() {
         {error && (
           <div className="mb-3 bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded">{error}</div>
         )}
-        <form onSubmit={create} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  <form onSubmit={create} className="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
           <div>
             <label className="block text-sm text-gray-600 mb-1">Code</label>
             <input className="w-full border rounded px-3 py-2" value={form.competency_code || ''} onChange={e=>setForm(f=>({...f, competency_code:e.target.value}))} required/>
@@ -123,6 +127,48 @@ export default function CompetencyManagement() {
           <div className="md:col-span-2">
             <label className="block text-sm text-gray-600 mb-1">Description</label>
             <textarea className="w-full border rounded px-3 py-2" value={form.competency_description || ''} onChange={e=>setForm(f=>({...f, competency_description:e.target.value}))} />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Category</label>
+            <div className="relative">
+              <input
+                className="w-full border rounded px-3 py-2"
+                value={form.category || ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setForm(f => ({ ...f, category: val }));
+                  setCategoryQuery(val);
+                  setShowCategorySuggestions(true);
+                }}
+                onFocus={() => setShowCategorySuggestions(true)}
+                onBlur={() => setTimeout(() => setShowCategorySuggestions(false), 150)}
+                placeholder="Type to search or create"
+              />
+              {showCategorySuggestions && (categoryQuery.trim() !== '' || items.some(i=>i.category)) && (
+                <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded shadow max-h-48 overflow-y-auto">
+                  {Array.from(new Set(items
+                    .map(i => i.category)
+                    .filter(c => !!c && c.toLowerCase().includes(categoryQuery.toLowerCase()))
+                  )).slice(0,25).map(c => (
+                    <button
+                      type="button"
+                      key={c}
+                      onClick={() => {
+                        setForm(f => ({ ...f, category: c }));
+                        setCategoryQuery(c || '');
+                        setShowCategorySuggestions(false);
+                      }}
+                      className="block w-full text-left px-3 py-2 hover:bg-blue-50 text-sm"
+                    >
+                      {c}
+                    </button>
+                  ))}
+                  {categoryQuery && !items.some(i => i.category && i.category.toLowerCase() === categoryQuery.toLowerCase()) && (
+                    <div className="px-3 py-2 text-xs text-gray-500 border-t">New category will be created</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           {/* Removed Max Score and Weight fields as requested */}
           <div className="flex items-center space-x-2">

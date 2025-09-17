@@ -181,6 +181,7 @@ async def get_configuration_by_type(
     
     return configuration
 
+
 @router.put("/{config_id}", response_model=ConfigurationResponse)
 async def update_configuration(
     config_id: str,
@@ -277,6 +278,7 @@ async def save_sjt_configuration(
     
     config_data = ConfigurationCreate(
         config_type="sjt",
+        scope="tenant",
         config_data=sjt_config,
         tenant_id=current_user.tenant_id
     )
@@ -303,6 +305,7 @@ async def save_jdt_configuration(
     
     config_data = ConfigurationCreate(
         config_type="jdt",
+        scope="tenant",
         config_data=jdt_config,
         tenant_id=current_user.tenant_id
     )
