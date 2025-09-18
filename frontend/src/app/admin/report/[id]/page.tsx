@@ -70,9 +70,13 @@ const ReportDetailPage = () => {
         try {
             console.log(`🤖 ${forceRegenerate ? 'Regenerating' : 'Generating'} AI analysis for submission:`, submission.id);
             
+            const token = typeof window !== 'undefined' ? window.sessionStorage.getItem('access_token') : null;
             const response = await fetch('/api/background-analysis', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
                 body: JSON.stringify({
                     submissionId: submission.id,
                     type: submission.testType.toLowerCase() === 'jdt' ? 'interview' : 'sjt',
@@ -283,7 +287,7 @@ const ReportDetailPage = () => {
 
 
 const ProtectedReportDetailPage = () => (
-    <ProtectedRoute adminOnly>
+    <ProtectedRoute allowedRoles={['admin','superadmin']}>
         <ReportDetailPage />
     </ProtectedRoute>
 );

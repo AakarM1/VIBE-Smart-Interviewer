@@ -255,8 +255,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
       try {
         console.log('📖 Fetching submissions via FastAPI');
         const result = await apiService.getSubmissions();
-        console.log(`✅ Fetched ${result.data?.length || 0} submissions`);
-        return result.data || [];
+        const list = (result.data || []).map((s: any) => ({
+          id: s.id,
+          candidateName: s.candidate_name,
+          testType: s.test_type,
+          date: s.created_at,
+          createdAt: s.created_at,
+          report: s.analysis_result || null,
+          history: s.conversation_history || [],
+          status: s.status,
+          candidateId: s.candidate_id,
+          candidateLanguage: s.candidate_language,
+          uiLanguage: s.ui_language,
+        }));
+        console.log(`✅ Fetched ${list.length} submissions`);
+        return list;
       } catch (error) {
         console.error('❌ Error fetching submissions:', error);
         return [];
@@ -266,11 +279,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
       try {
         console.log('📖 Fetching submission by ID via FastAPI:', id);
         const result = await apiService.getSubmission(id);
-        if (result.data) {
-          console.log('✅ Submission fetched successfully');
-          return result.data;
-        }
-        return null;
+        if (!result.data) return null;
+        const s = result.data as any;
+        const mapped = {
+          id: s.id,
+          candidateName: s.candidate_name,
+          testType: s.test_type,
+          date: s.created_at,
+          createdAt: s.created_at,
+          report: s.analysis_result || null,
+          history: s.conversation_history || [],
+          status: s.status,
+          candidateId: s.candidate_id,
+          candidateLanguage: s.candidate_language,
+          uiLanguage: s.ui_language,
+        };
+        console.log('✅ Submission fetched successfully');
+        return mapped;
       } catch (error) {
         console.error('❌ Error fetching submission:', error);
         return null;

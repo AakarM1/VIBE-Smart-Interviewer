@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 // Ensure Node.js runtime so process.env is available for Genkit/Gemini keys
 export const runtime = 'nodejs';
 import { apiService } from '@/lib/api-service';
-import { submissionService, convertFirestoreSubmission } from '@/lib/database';
 import { configurationService } from '@/lib/config-service';
+import { ai } from '@/ai/genkit';
+import { submissionService, convertFirestoreSubmission } from '@/lib/database';
 import { analyzeConversation } from '@/ai/flows/analyze-conversation';
 import { analyzeSJTResponse, analyzeSingleCompetency, type AnalyzeSJTResponseInput } from '@/ai/flows/analyze-sjt-response';
 import { analyzeSJTScenario, type AnalyzeSJTScenarioInput } from '@/ai/flows/analyze-sjt-scenario';
@@ -25,6 +26,13 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`🤖 Starting AI analysis for submission: ${submissionId}${forceRegenerate ? ' (Force Regenerate)' : ''}`);
+
+    // Forward Authorization header to FastAPI calls made from this route
+    const authHeader = request.headers.get('authorization') || request.headers.get('Authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace(/^Bearer\s+/i, '');
+      apiService.setAccessTokenForServer(token);
+    }
     
     let analysisResult: AnalysisResult;
     
@@ -128,6 +136,27 @@ export async function POST(request: NextRequest) {
         console.log(`📊 Using follow-up penalty: ${followUpPenalty}%`);
       } catch (error) {
         console.warn('⚠️ Could not retrieve SJT config, using default penalty of 0%');
+      }
+
+      // Fetch active competencies list from FastAPI to validate/normalize assessed competencies
+      let activeCompetencyNames: string[] = [];
+      let competencyNameSet = new Set<string>();
+      let competencyCodeSet = new Set<string>();
+      try {
+        const compsRes = await apiService.listCompetencies({ include_inactive: false });
+        const comps = compsRes.data || [];
+        for (const c of comps as any[]) {
+          if (c.competency_name) {
+            activeCompetencyNames.push(c.competency_name);
+            competencyNameSet.add(String(c.competency_name).toLowerCase());
+          }
+          if (c.competency_code) {
+            competencyCodeSet.add(String(c.competency_code).toLowerCase());
+          }
+        }
+        console.log(`📚 Loaded ${activeCompetencyNames.length} active competencies for validation`);
+      } catch (e) {
+        console.warn('⚠️ Could not load competencies; proceeding without validation', e);
       }
       
         // Group entries by scenario
@@ -581,9 +610,9 @@ OVERALL ASSESSMENT: ${strongResponses.length > improvementAreas.length ?
         // Generate question-wise details for Section 3 - FIXED: Map individual questions correctly
         console.log(`🔍 Generating Section 3 details for ${submission.history.length} individual questions`);
         
-        const questionwiseDetails: QuestionwiseDetail[] = submission.history
-          .filter(entry => entry.answer) // Only include answered questions
-          .map((entry, questionIndex) => {
+        const questionwiseDetails: QuestionwiseDetail[] = (submission.history as any[])
+          .filter((entry: any) => entry.answer) // Only include answered questions
+          .map((entry: any, questionIndex: number) => {
             // Find which scenario analysis this question belongs to
             const matchingAnalysis = sjtAnalyses.find(analysis => {
               // Match by scenario key - find the analysis that covers this question's scenario
@@ -620,14 +649,14 @@ OVERALL ASSESSMENT: ${strongResponses.length > improvementAreas.length ?
         console.log('🤖 Generating competency-specific qualitative summaries...');
         const competencyQualitativeSummary: Competency[] = [];
         
-        for (const [competencyName, data] of competencyMap.entries()) {
+  for (const [competencyName, data] of competencyMap.entries()) {
           try {
             // Get all questions for this competency - FIXED: Map individual questions correctly
             console.log(`🎯 Generating summary for competency: ${competencyName}`);
             
-            const competencyResponses = submission.history
-              .filter(entry => entry.answer) // Only answered questions
-              .map((entry, questionIndex) => {
+            const competencyResponses = (submission.history as any[])
+              .filter((entry: any) => entry.answer) // Only answered questions
+              .map((entry: any, questionIndex: number) => {
                 // Find the analysis for this question's scenario
                 const entryScenarioKey = entry.situation ? 
                   entry.situation.trim().substring(0, 50).replace(/[^\w\s]/g, '').trim() :
@@ -650,7 +679,7 @@ OVERALL ASSESSMENT: ${strongResponses.length > improvementAreas.length ?
                   followUpAnswers: []
                 };
               })
-              .filter(response => {
+              .filter((response: any) => {
                 // Only include questions that actually assess this competency
                 const entryScenarioKey = submission.history[response.questionNumber - 1]?.situation ? 
                   submission.history[response.questionNumber - 1].situation!.trim().substring(0, 50).replace(/[^\w\s]/g, '').trim() :

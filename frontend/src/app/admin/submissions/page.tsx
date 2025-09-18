@@ -24,6 +24,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { extractAudioFromVideo } from '@/lib/audio-extractor';
+import apiService from '@/lib/api-service';
 
 /**
  * Download blob from URL (simplified version without Firebase)
@@ -93,7 +94,7 @@ async function downloadVideoBlob(storageUrl: string): Promise<Blob> {
 
 // Simplified submission management without Firebase
 export default function AdminSubmissionsPage() {
-  const { user, loading } = useAuth();
+  const { user, loading, getSubmissions, deleteSubmission } = useAuth();
   const { toast } = useToast();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [filteredSubmissions, setFilteredSubmissions] = useState<Submission[]>([]);
@@ -103,18 +104,14 @@ export default function AdminSubmissionsPage() {
   const [downloadFormat, setDownloadFormat] = useState<'video' | 'audio'>('video');
   const [extractingAudio, setExtractingAudio] = useState<Record<string, boolean>>({});
 
-  // Load submissions (mock data for now)
+  // Load submissions from FastAPI
   useEffect(() => {
     const loadSubmissions = async () => {
       try {
         setLoadingSubmissions(true);
-        
-        // TODO: Replace with FastAPI backend call
-        // For now, return empty array to prevent Firebase errors
-        const mockSubmissions: Submission[] = [];
-        
-        setSubmissions(mockSubmissions);
-        setFilteredSubmissions(mockSubmissions);
+        const list = await getSubmissions();
+        setSubmissions(list as Submission[]);
+        setFilteredSubmissions(list as Submission[]);
         
       } catch (error) {
         console.error('Error loading submissions:', error);
@@ -154,13 +151,7 @@ export default function AdminSubmissionsPage() {
   // Delete submission
   const handleDelete = async (submissionId: string) => {
     try {
-      const response = await fetch(`/api/submissions/${submissionId}/delete`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to delete submission: ${response.statusText}`);
-      }
+      await deleteSubmission(submissionId);
 
       // Remove from local state
       setSubmissions(prev => prev.filter(sub => sub.id !== submissionId));
@@ -190,46 +181,54 @@ export default function AdminSubmissionsPage() {
       setDownloading(prev => ({ ...prev, [submissionId]: true }));
       
       console.log(`📥 Starting download for submission: ${submissionId}`);
-      
-      if (!submission.history || submission.history.length === 0) {
-        throw new Error('No video content found in submission');
-      }
+      let videoBlob: Blob | null = null;
+      let sourceHint = '';
 
-      // Get the latest video entry
-      const latestEntry = submission.history[submission.history.length - 1];
-      if (!latestEntry.videoDataUri) {
-        throw new Error('No video data found in latest submission entry');
-      }
-
-      const videoDataUri = latestEntry.videoDataUri;
-      console.log(`📥 Video data URI type: ${videoDataUri.startsWith('data:') ? 'Data URI' : 'Storage URL'}`);
-
-      let videoBlob: Blob;
-      
+      // 1) Try backend media list
       try {
-        // Check if it's a data URI or Storage URL  
+        const mediaRes = await apiService.listSubmissionMedia(submissionId);
+        const files = mediaRes.data || [];
+        // Prefer last video; fallback to audio
+        const videoFile = [...files].reverse().find((f: any) => (f.file_type || '').toLowerCase().includes('video'))
+          || [...files].reverse().find((f: any) => (f.file_type || '').toLowerCase().includes('webm'))
+          || null;
+        const audioFile = [...files].reverse().find((f: any) => (f.file_type || '').toLowerCase().includes('audio')) || null;
+        const chosen = videoFile || audioFile;
+        if (chosen) {
+          const url = chosen.storage_url || chosen.file_path || chosen.url;
+          if (url) {
+            sourceHint = 'storage';
+            videoBlob = await downloadFromStorage(url);
+          }
+        }
+      } catch (e) {
+        console.warn('Media list fetch failed, falling back to history:', e);
+      }
+
+      // 2) Fallback to history latest entry videoDataUri
+      if (!videoBlob) {
+        if (!submission.history || submission.history.length === 0) {
+          throw new Error('No media found for this submission');
+        }
+        const latestEntry = submission.history[submission.history.length - 1];
+        if (!latestEntry.videoDataUri) {
+          throw new Error('No media URL or data URI in submission history');
+        }
+        const videoDataUri = latestEntry.videoDataUri;
+        console.log(`📥 Using history ${videoDataUri.startsWith('data:') ? 'data URI' : 'URL'}`);
+        sourceHint = videoDataUri.startsWith('data:') ? 'data-uri' : 'url';
         if (videoDataUri.startsWith('data:')) {
-          // Handle data URI directly
           const response = await fetch(videoDataUri);
           videoBlob = await response.blob();
         } else {
-          // Handle Storage URL with proper authentication
-          console.log(`📥 Downloading media from Storage: ${videoDataUri}`);
-          
-          try {
-            videoBlob = await downloadFromStorage(videoDataUri);
-          } catch (downloadError) {
-            console.error('❌ Storage download failed:', downloadError);
-            throw new Error(`Failed to download from storage: ${downloadError instanceof Error ? downloadError.message : 'Unknown error'}`);
-          }
+          videoBlob = await downloadFromStorage(videoDataUri);
         }
-        
-        console.log(`✅ Video blob obtained: ${videoBlob.size} bytes, type: ${videoBlob.type}`);
-        
-      } catch (blobError) {
-        console.error('❌ Failed to get video blob:', blobError);
-        throw new Error(`Failed to get video data: ${blobError instanceof Error ? blobError.message : 'Unknown error'}`);
       }
+      
+      if (!videoBlob) {
+        throw new Error('Unable to obtain media blob');
+      }
+      console.log(`✅ Media blob obtained from ${sourceHint}: ${videoBlob.size} bytes, type: ${videoBlob.type}`);
 
       // Handle format conversion if needed
       let finalBlob = videoBlob;
@@ -415,7 +414,7 @@ export default function AdminSubmissionsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Link href={`/admin/submissions/${submission.id}`}>
+                            <Link href={`/admin/report/${submission.id}`}>
                               <Button variant="outline" size="sm">
                                 <Eye className="h-4 w-4 mr-1" />
                                 View

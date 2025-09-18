@@ -96,7 +96,7 @@ async def get_submission(
         )
     
     with UserContext(db, current_user):
-        submission = db.query(Submission).filter(Submission.id == submission_uuid).first()
+        submission = db.query(Submission).filter(Submission.id == str(submission_uuid)).first()
     
     if not submission:
         raise HTTPException(
@@ -106,14 +106,14 @@ async def get_submission(
     
     # Check permissions
     if (current_user.role == "candidate" and 
-        submission.user_id != current_user.id):
+        str(submission.user_id) != str(current_user.id)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
         )
     
     if (current_user.role == "admin" and 
-        submission.tenant_id != current_user.tenant_id):
+        str(submission.tenant_id) != str(current_user.tenant_id)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -139,7 +139,7 @@ async def update_submission(
         )
     
     with UserContext(db, current_user):
-        submission = db.query(Submission).filter(Submission.id == submission_uuid).first()
+        submission = db.query(Submission).filter(Submission.id == str(submission_uuid)).first()
     
     if not submission:
         raise HTTPException(
@@ -149,7 +149,7 @@ async def update_submission(
     
     # Check permissions
     if (current_user.role == "admin" and 
-        submission.tenant_id != current_user.tenant_id):
+        str(submission.tenant_id) != str(current_user.tenant_id)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -187,7 +187,7 @@ async def delete_submission(
         )
     
     with UserContext(db, current_user):
-        submission = db.query(Submission).filter(Submission.id == submission_uuid).first()
+        submission = db.query(Submission).filter(Submission.id == str(submission_uuid)).first()
     
     if not submission:
         raise HTTPException(
@@ -197,7 +197,7 @@ async def delete_submission(
     
     # Check permissions
     if (current_user.role == "admin" and 
-        submission.tenant_id != current_user.tenant_id):
+        str(submission.tenant_id) != str(current_user.tenant_id)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -240,7 +240,7 @@ async def upload_media_file_endpoint(
     
     # Check if submission exists and user has access
     with UserContext(db, current_user):
-        submission = db.query(Submission).filter(Submission.id == submission_uuid).first()
+        submission = db.query(Submission).filter(Submission.id == str(submission_uuid)).first()
     
     if not submission:
         raise HTTPException(
@@ -249,7 +249,7 @@ async def upload_media_file_endpoint(
         )
     
     if (current_user.role == "candidate" and 
-        submission.user_id != current_user.id):
+        str(submission.user_id) != str(current_user.id)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -326,7 +326,7 @@ async def list_media_files(
     
     # Check if submission exists and user has access
     with UserContext(db, current_user):
-        submission = db.query(Submission).filter(Submission.id == submission_uuid).first()
+        submission = db.query(Submission).filter(Submission.id == str(submission_uuid)).first()
     
     if not submission:
         raise HTTPException(
@@ -335,7 +335,7 @@ async def list_media_files(
         )
     
     if (current_user.role == "candidate" and 
-        submission.user_id != current_user.id):
+        str(submission.user_id) != str(current_user.id)):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied"
@@ -343,7 +343,7 @@ async def list_media_files(
     
     with UserContext(db, current_user):
         media_files = db.query(MediaFile).filter(
-            MediaFile.submission_id == submission_uuid
+            MediaFile.submission_id == str(submission_uuid)
         ).order_by(MediaFile.question_index).all()
     
     return [
@@ -379,20 +379,20 @@ async def delete_media_files(
         )
 
     with UserContext(db, current_user):
-        submission = db.query(Submission).filter(Submission.id == submission_uuid).first()
+        submission = db.query(Submission).filter(Submission.id == str(submission_uuid)).first()
 
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
 
     # Permission checks
-    if (current_user.role == "candidate" and submission.user_id != current_user.id):
+    if (current_user.role == "candidate" and str(submission.user_id) != str(current_user.id)):
         raise HTTPException(status_code=403, detail="Access denied")
-    if (current_user.role == "admin" and submission.tenant_id != current_user.tenant_id):
+    if (current_user.role == "admin" and str(submission.tenant_id) != str(current_user.tenant_id)):
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Collect media files
     with UserContext(db, current_user):
-        media_files = db.query(MediaFile).filter(MediaFile.submission_id == submission_uuid).all()
+        media_files = db.query(MediaFile).filter(MediaFile.submission_id == str(submission_uuid)).all()
 
     deleted = 0
     errors = []

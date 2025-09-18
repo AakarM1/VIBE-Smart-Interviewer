@@ -97,6 +97,10 @@ export interface Submission {
     // Multilingual support
     candidateLanguage?: string; // ISO 639-1 code of candidate's chosen language
     uiLanguage?: string; // Language used for UI during test (may differ from answers)
+  // Optional fields for admin views
+  createdAt?: string;
+  status?: string;
+  competencies?: string[];
 }
 
     

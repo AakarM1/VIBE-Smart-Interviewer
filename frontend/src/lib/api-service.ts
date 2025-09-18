@@ -144,6 +144,15 @@ class FastAPIService {
     }
   }
 
+  // SERVER-ONLY: Set and clear access token for server-side routes (no window/sessionStorage)
+  // Use these in Next.js API routes to forward the user's Authorization header.
+  public setAccessTokenForServer(token: string) {
+    this.accessToken = token;
+  }
+  public clearAccessTokenForServer() {
+    this.accessToken = null;
+  }
+
   // Authentication methods
   async login(credentials: LoginCredentials): Promise<ApiResponse<AuthTokens & { user: User }>> {
     const result = await this.request<AuthTokens & { user: User }>('/auth/login', {
@@ -359,6 +368,11 @@ class FastAPIService {
     return this.request<{ message: string }>(`/api/v1/submissions/${submissionId}`, {
       method: 'DELETE',
     });
+  }
+
+  // Media listing for a submission
+  async listSubmissionMedia(submissionId: string): Promise<ApiResponse<any[]>> {
+    return this.request<any[]>(`/api/v1/submissions/${submissionId}/media`);
   }
 
   // Configuration management
