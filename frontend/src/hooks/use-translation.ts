@@ -5,6 +5,7 @@
 
 import React, { useCallback, useState, useEffect } from 'react';
 import { useLanguage } from '@/contexts/language-context';
+import i18n from '@/lib/i18n';
 
 export interface UseTranslationReturn {
   // Core translation function
@@ -51,7 +52,6 @@ export const useTranslation = (): UseTranslationReturn => {
     supportedLanguages,
     ready,
     translate,
-    translateBatch,
     getTranslation
   } = useLanguage();
   
@@ -67,8 +67,10 @@ export const useTranslation = (): UseTranslationReturn => {
   
   // Sync translation (returns immediately, may not be translated)
   const ts = useCallback((key: string, fallback?: string): string => {
-    // For sync access, we return the fallback or key
-    // This is used when async translation isn't practical
+    try {
+      const val = i18n.t(key) as unknown as string;
+      if (val && typeof val === 'string' && val !== key) return val;
+    } catch {}
     return fallback || key.split('.').pop() || key;
   }, []);
   
@@ -79,6 +81,11 @@ export const useTranslation = (): UseTranslationReturn => {
     );
     return translations;
   }, [t]);
+  
+  // Batch translate arbitrary texts via context translate
+  const translateBatch = useCallback(async (texts: string[], targetLang?: string): Promise<string[]> => {
+    return Promise.all(texts.map(txt => translate(txt, targetLang)));
+  }, [translate]);
   
   return {
     t,

@@ -19,24 +19,36 @@ export async function uploadMediaToStorage(
   submissionId: string,
   entryIndex: number,
   mediaType: 'audio' | 'video',
-  candidateName?: string
+  candidateName?: string,
+  options?: { scenarioId?: number | string; isFollowUp?: boolean; followUpSequence?: number }
 ): Promise<string> {
   try {
     const formData = new FormData();
     const fileName = `Q${entryIndex + 1}_${mediaType}.webm`;
     formData.append('file', blob, fileName);
-    formData.append('submission_id', submissionId);
-    formData.append('entry_index', entryIndex.toString());
-    formData.append('media_type', mediaType);
+    // Backend expects these exact form field names
+    formData.append('question_index', entryIndex.toString());
+    formData.append('file_type', mediaType);
     
     if (candidateName) {
       formData.append('candidate_name', candidateName);
     }
 
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/media/upload`, {
+    // Optional metadata supported by backend
+    if (options?.scenarioId !== undefined) {
+      formData.append('scenario_id', String(options.scenarioId));
+    }
+    if (options?.isFollowUp !== undefined) {
+      formData.append('is_follow_up', String(options.isFollowUp));
+    }
+    if (options?.followUpSequence !== undefined) {
+      formData.append('follow_up_sequence', String(options.followUpSequence));
+    }
+
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/api/v1/submissions/${submissionId}/media`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+  'Authorization': `Bearer ${ (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token') }`
       },
       body: formData,
     });
@@ -47,9 +59,10 @@ export async function uploadMediaToStorage(
 
     const result = await response.json();
     console.log(`✅ ${mediaType} uploaded to FastAPI backend: ${fileName}`);
-    console.log(`📁 File stored at: ${result.file_path || result.url}`);
+  const storedUrl: string = result.storage_url || result.file_path || result.url;
+  console.log(`📁 File stored at: ${storedUrl}`);
     
-    return result.file_path || result.url || `/uploads/submissions/${submissionId}/${fileName}`;
+  return storedUrl || `/uploads/submissions/${submissionId}/${fileName}`;
   } catch (error) {
     console.error(`❌ Error uploading ${mediaType} to FastAPI backend:`, error);
     throw error;
@@ -92,10 +105,10 @@ export function dataUriToBlob(dataUri: string): Promise<Blob> {
  */
 export async function deleteSubmissionMedia(submissionId: string): Promise<boolean> {
   try {
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/media/submissions/${submissionId}`, {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/api/v1/submissions/${submissionId}/media`, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+  'Authorization': `Bearer ${ (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token') }`
       },
     });
 

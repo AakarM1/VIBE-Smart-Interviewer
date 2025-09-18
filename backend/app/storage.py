@@ -65,6 +65,10 @@ class MediaStorageManager:
             self._init_s3_client()
         elif self.config.storage_provider == "local":
             self._init_local_storage()
+        elif self.config.storage_provider == "firebase":
+            # Lazy init via firebase helper when uploading
+            # Ensure local temp exists for any fallback
+            self._init_local_storage()
     
     def _init_s3_client(self):
         """Initialize S3 client"""
@@ -138,7 +142,13 @@ class MediaStorageManager:
         file: UploadFile, 
         submission_id: str, 
         question_index: int, 
-        file_type: str
+        file_type: str,
+        *,
+        tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        scenario_id: Optional[str] = None,
+        is_follow_up: bool = False,
+        follow_up_sequence: int = 0
     ) -> dict:
         """Upload file to configured storage"""
         
@@ -154,6 +164,50 @@ class MediaStorageManager:
         try:
             if self.config.storage_provider == "s3":
                 return await self._upload_to_s3(file, full_path)
+            elif self.config.storage_provider == "firebase":
+                # Use organized path if we have the necessary context
+                firebase_helper = get_firebase_storage if get_firebase_storage else None
+                if firebase_helper is None:
+                    logger.warning("Firebase storage helper not available; falling back to local storage")
+                    return await self._upload_to_local(file, full_path)
+                storage = firebase_helper()
+                try:
+                    from app.firebase_storage import FirebaseStorageManager  # type: ignore
+                except Exception:
+                    pass
+                # Build organized path when possible
+                if tenant_id and user_id and scenario_id:
+                    # Remove leading dot from extension
+                    ext = file_extension.lstrip('.')
+                    firebase_path = storage.generate_file_path(
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        submission_id=submission_id,
+                        scenario_id=scenario_id,
+                        question_index=question_index,
+                        is_follow_up=is_follow_up,
+                        follow_up_sequence=follow_up_sequence,
+                        file_type=file_type,
+                        file_extension=ext
+                    )
+                else:
+                    # Fallback simple path in Firebase bucket
+                    from datetime import datetime
+                    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                    firebase_path = f"trajectorie-media/submissions/{submission_id}/{file_type}_{ts}{file_extension}"
+
+                # Read file content
+                content = await file.read()
+                url = storage.upload_media_file(content, firebase_path, content_type=file.content_type or "application/octet-stream")
+                if not url:
+                    raise RuntimeError("Firebase upload returned no URL")
+                return {
+                    "storage_provider": "firebase",
+                    "file_path": firebase_path,
+                    "firebase_path": firebase_path,
+                    "storage_url": url,
+                    "file_size": len(content)
+                }
             else:
                 return await self._upload_to_local(file, full_path)
                 
@@ -224,6 +278,18 @@ class MediaStorageManager:
                     Key=file_path
                 )
                 logger.info(f"File deleted from S3: {file_path}")
+            elif self.config.storage_provider == "firebase":
+                firebase_helper = get_firebase_storage if get_firebase_storage else None
+                if firebase_helper is None:
+                    logger.warning("Firebase storage helper not available; cannot delete from Firebase")
+                    return False
+                storage = firebase_helper()
+                deleted = storage.delete_media_file(file_path)
+                if deleted:
+                    logger.info(f"File deleted from Firebase: {file_path}")
+                else:
+                    logger.warning(f"Failed to delete file from Firebase: {file_path}")
+                return deleted
             else:
                 full_path = Path(self.config.local_storage_path) / file_path
                 if full_path.exists():
@@ -250,6 +316,10 @@ class MediaStorageManager:
             except Exception as e:
                 logger.error(f"Failed to generate presigned URL: {e}")
                 return ""
+        elif self.config.storage_provider == "firebase":
+            # For Firebase, URLs are generally stored as public URLs at upload time
+            # Caller should prefer stored storage_url; if not available, return empty
+            return ""
         else:
             # Return relative URL for local files
             return f"/media/{file_path}"
@@ -295,10 +365,11 @@ async def upload_media_file(
     file: UploadFile, 
     submission_id: str, 
     question_index: int, 
-    file_type: str
+    file_type: str,
+    **kwargs
 ) -> dict:
     """Upload media file (convenience function)"""
-    return await storage_manager.upload_file(file, submission_id, question_index, file_type)
+    return await storage_manager.upload_file(file, submission_id, question_index, file_type, **kwargs)
 
 async def delete_media_file(file_path: str) -> bool:
     """Delete media file (convenience function)"""

@@ -51,7 +51,7 @@ export default function UserAssignmentManagement() {
 
   const fetchUsers = async () => {
     try {
-      const token = localStorage.getItem('access_token');
+  const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
       const response = await fetch(`${API_BASE}/users`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -67,7 +67,7 @@ export default function UserAssignmentManagement() {
 
   const fetchAdmins = async () => {
     try {
-      const token = localStorage.getItem('access_token');
+  const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
       const response = await fetch(`${API_BASE}/users`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -83,7 +83,7 @@ export default function UserAssignmentManagement() {
 
   const fetchAssignments = async () => {
     try {
-      const token = localStorage.getItem('access_token');
+  const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
       const response = await fetch(`${API_BASE}/api/v1/assignments/users`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -118,7 +118,7 @@ export default function UserAssignmentManagement() {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('access_token');
+  const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
       const response = await fetch(`${API_BASE}/api/v1/assignments/users/bulk`, {
         method: 'POST',
         headers: {

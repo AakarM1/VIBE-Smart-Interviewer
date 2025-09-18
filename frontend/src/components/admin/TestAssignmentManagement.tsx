@@ -52,7 +52,7 @@ export default function TestAssignmentManagement() {
 
   const fetchAssignedUsers = async () => {
     try {
-      const token = localStorage.getItem('access_token');
+      const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
       const response = await fetch(`${API_BASE}/users`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -68,7 +68,7 @@ export default function TestAssignmentManagement() {
 
   const fetchTestAssignments = async () => {
     try {
-      const token = localStorage.getItem('access_token');
+      const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
       const response = await fetch(`${API_BASE}/api/v1/assignments/tests`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -113,7 +113,7 @@ export default function TestAssignmentManagement() {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('access_token');
+      const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
       const response = await fetch(`${API_BASE}/api/v1/assignments/tests/bulk`, {
         method: 'POST',
         headers: {

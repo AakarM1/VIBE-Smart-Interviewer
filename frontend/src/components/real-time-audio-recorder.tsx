@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Mic, Square, Video, VideoOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { InterviewMode } from '@/types';
+import { useLanguage } from '@/contexts/language-context';
 
 interface RealTimeMediaCaptureProps {
   onRecordingComplete: (mediaBlob: Blob, mediaDataUri: string) => void;
@@ -43,6 +44,25 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [supportsSpeechRecognition, setSupportsSpeechRecognition] = useState(false);
   const [currentTranscription, setCurrentTranscription] = useState('');
+  const { currentLanguage } = useLanguage();
+
+  // Map BCP-47 codes to SpeechRecognition-preferred locale variants
+  const getSpeechLocale = useCallback((langCode: string | undefined) => {
+    const code = (langCode || 'en').toLowerCase();
+    switch (code) {
+      case 'en': return 'en-US';
+      case 'es': return 'es-ES';
+      case 'fr': return 'fr-FR';
+      case 'de': return 'de-DE';
+      case 'ar': return 'ar-SA';
+      case 'pt': return 'pt-PT';
+      case 'hi': return 'hi-IN';
+      case 'ru': return 'ru-RU';
+      case 'ja': return 'ja-JP';
+      case 'zh': return 'zh-CN';
+      default: return 'en-US';
+    }
+  }, []);
 
   useEffect(() => {
     // Check if browser supports Speech Recognition
@@ -115,7 +135,7 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
     
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    recognition.lang = getSpeechLocale(currentLanguage);
 
     let finalTranscript = '';
 
@@ -170,7 +190,7 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
         description: 'Could not start real-time transcription. Recording will continue without live transcription.',
       });
     }
-  }, [supportsSpeechRecognition, isRecordingInternal, onRealtimeTranscription, toast]);
+  }, [supportsSpeechRecognition, isRecordingInternal, onRealtimeTranscription, toast, getSpeechLocale, currentLanguage]);
 
   const stopSpeechRecognition = useCallback(() => {
     if (speechRecognitionRef.current) {

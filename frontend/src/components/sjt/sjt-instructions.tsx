@@ -9,7 +9,7 @@ import { ChevronRight, Info, Lightbulb, Languages, CheckCircle } from 'lucide-re
 import React, {useState, useEffect} from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from '../ui/label';
-import { configurationService } from '@/lib/config-service';
+import { configurationService, getSjtFollowUpCount } from '@/lib/config-service';
 
 interface SJTInstructionsProps {
   onProceed: (details: PreInterviewDetails) => void;
@@ -35,6 +35,7 @@ export function SJTInstructions({ onProceed }: SJTInstructionsProps) {
   const [language, setLanguage] = useState('');
   const [availableLanguages, setAvailableLanguages] = useState<string[]>(['English']);
   const [settings, setSettings] = useState({ timeLimit: 0, numberOfQuestions: 5 });
+  const [hasFollowUps, setHasFollowUps] = useState(false);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -53,13 +54,16 @@ export function SJTInstructions({ onProceed }: SJTInstructionsProps) {
             timeLimit: savedConfig.settings.timeLimit || 0,
             numberOfQuestions: savedConfig.settings.numberOfQuestions || 5,
           });
+          const fu = getSjtFollowUpCount(savedConfig.settings);
+          setHasFollowUps(!!fu && fu > 0);
         }
       } catch (error) {
         console.error('Error loading SJT configuration:', error);
         // Set defaults if there's an error
         setAvailableLanguages(['English']);
         setLanguage('English');
-        setSettings({ timeLimit: 0, numberOfQuestions: 5 });
+  setSettings({ timeLimit: 0, numberOfQuestions: 5 });
+  setHasFollowUps(false);
       }
     };
 
@@ -67,8 +71,8 @@ export function SJTInstructions({ onProceed }: SJTInstructionsProps) {
   }, []);
   
   const handleProceed = () => {
-    const details: PreInterviewDetails = {
-        name: user?.candidateName || 'Candidate',
+  const details: PreInterviewDetails = {
+    name: user?.candidate_name || 'Candidate',
         roleCategory: "Situational Judgement Test",
         language: language || 'English'
     };
@@ -90,7 +94,7 @@ export function SJTInstructions({ onProceed }: SJTInstructionsProps) {
                         <div className="w-full">
                             <p className="font-bold text-lg leading-tight">TOTAL</p>
                             <p className="text-sm">Questions</p>
-                            <p className="text-5xl font-bold">{settings.numberOfQuestions || 'All'}</p>
+                            <p className="text-5xl font-bold">{settings.numberOfQuestions || 'All'}{hasFollowUps ? '+' : ''}</p>
                         </div>
                         <div className="w-full border-t border-white/50 my-4"></div>
                         <div className="w-full">

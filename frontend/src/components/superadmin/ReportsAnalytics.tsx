@@ -20,7 +20,7 @@ export default function ReportsAnalytics() {
           fetch((process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000') + '/api/v1/reports/generated', {
             headers: {
               'Content-Type': 'application/json',
-              ...(typeof window !== 'undefined' && localStorage.getItem('access_token') ? { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` } : {}),
+              ...(typeof window !== 'undefined' && ((sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))) ? { 'Authorization': `Bearer ${(sessionStorage.getItem('access_token') || localStorage.getItem('access_token'))}` } : {}),
             }
           })
         ]);

@@ -3,11 +3,11 @@
  * Handles transcription request queuing and processing
  */
 
-import { type TranscribeAudioInput, type TranscribeAudioOutput } from '@/ai/flows/transcribe-audio';
+import { type TranscribeRequest, type TranscribeResponse, transcribeViaServer } from '@/lib/transcribe';
 
 export interface QueuedTranscriptionRequest {
   id: string;
-  input: TranscribeAudioInput;
+  input: TranscribeRequest;
   operationType: 'transcribe';
   priority: 'low' | 'normal' | 'high' | 'urgent';
   attempts: number;
@@ -16,37 +16,14 @@ export interface QueuedTranscriptionRequest {
   requestedAt: Date;
   lastAttemptAt?: Date;
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'retry_scheduled';
-  result?: TranscribeAudioOutput;
+  result?: TranscribeResponse;
   error?: string;
   retryAfter?: Date;
   retryCount: number;
   maxRetries: number;
   onProgress?: (status: QueuedTranscriptionRequest) => void;
-  onComplete?: (result: TranscribeAudioOutput) => void;
+  onComplete?: (result: TranscribeResponse) => void;
   onError?: (error: string) => void;
-}
-
-export interface QueuedAIRequest {
-  id: string;
-  input: TranscribeAudioInput;
-  status: 'queued' | 'processing' | 'completed' | 'failed' | 'retry_scheduled';
-  priority: 'urgent' | 'high' | 'normal' | 'low';
-  requestedAt: Date;
-  startedAt?: Date;
-  completedAt?: Date;
-  result?: TranscribeAudioOutput;
-  error?: string;
-  attempts: number;
-  maxAttempts: number;
-  retryCount: number;
-  maxRetries: number;
-  estimatedDuration?: number;
-  actualDuration?: number;
-  callbacks?: {
-    onProgress?: (status: QueuedAIRequest) => void;
-    onComplete?: (result: TranscribeAudioOutput) => void;
-    onError?: (error: string) => void;
-  };
 }
 
 export interface QueueStats {
@@ -69,9 +46,6 @@ export class AIQueueService {
     // Optional config parameter for compatibility
   }
 
-  /**
-   * Shutdown the queue service
-   */
   async shutdown(): Promise<void> {
     this.processing = false;
     this.queue = [];
@@ -79,16 +53,13 @@ export class AIQueueService {
     this.listeners.clear();
   }
 
-  /**
-   * Queue a transcription request
-   */
   async queueTranscription(
-    input: TranscribeAudioInput,
+    input: TranscribeRequest,
     options: {
       priority?: 'urgent' | 'high' | 'normal' | 'low';
       maxAttempts?: number;
       onProgress?: (status: QueuedTranscriptionRequest) => void;
-      onComplete?: (result: TranscribeAudioOutput) => void;
+      onComplete?: (result: TranscribeResponse) => void;
       onError?: (error: string) => void;
     } = {}
   ): Promise<string> {
@@ -119,21 +90,12 @@ export class AIQueueService {
     return requestId;
   }
 
-  /**
-   * Get request status
-   */
   getRequestStatus(requestId: string): QueuedTranscriptionRequest | null {
-    // Check queue
     const queuedRequest = this.queue.find(req => req.id === requestId);
     if (queuedRequest) return queuedRequest;
-
-    // Check completed
     return this.completed.get(requestId) || null;
   }
 
-  /**
-   * Get queue statistics
-   */
   getQueueStats(): QueueStats {
     const total = this.queue.length + this.completed.size;
     const queued = this.queue.filter(req => req.status === 'queued').length;
@@ -148,20 +110,17 @@ export class AIQueueService {
       low: this.queue.filter(req => req.priority === 'low').length,
     };
 
-    return { 
-      total, 
-      queued, 
-      processing, 
-      completed, 
-      failed, 
+    return {
+      total,
+      queued,
+      processing,
+      completed,
+      failed,
       queueSize: this.queue.length,
-      priorityBreakdown 
+      priorityBreakdown,
     };
   }
 
-  /**
-   * Cancel a request
-   */
   cancelRequest(requestId: string): boolean {
     const index = this.queue.findIndex(req => req.id === requestId);
     if (index >= 0) {
@@ -172,31 +131,22 @@ export class AIQueueService {
     return false;
   }
 
-  /**
-   * Clear completed requests
-   */
   clearCompleted(): void {
     this.completed.clear();
     this.notifyListeners();
   }
 
-  /**
-   * Get all queue items
-   */
   getAllRequests(): QueuedTranscriptionRequest[] {
     return [...this.queue, ...Array.from(this.completed.values())];
   }
 
-  /**
-   * Subscribe to queue updates
-   */
   subscribe(listener: (requests: QueuedTranscriptionRequest[]) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
   private sortQueueByPriority(): void {
-    const priorityOrder = { urgent: 0, high: 1, normal: 2, low: 3 };
+    const priorityOrder = { urgent: 0, high: 1, normal: 2, low: 3 } as const;
     this.queue.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
   }
 
@@ -207,14 +157,11 @@ export class AIQueueService {
 
   private async processQueue(): Promise<void> {
     if (this.processing || this.queue.length === 0) return;
-
     this.processing = true;
-
     while (this.queue.length > 0) {
       const request = this.queue.shift()!;
       await this.processRequest(request);
     }
-
     this.processing = false;
   }
 
@@ -225,52 +172,33 @@ export class AIQueueService {
       request.attempts++;
       this.notifyListeners();
 
-      // Notify progress callback
       request.onProgress?.(request);
 
-      // Import transcription function dynamically to avoid circular dependencies
-      const { transcribeAudio } = await import('@/ai/flows/transcribe-audio');
-      
-      const result = await transcribeAudio(request.input);
+      const result = await transcribeViaServer(request.input);
 
       request.status = 'completed';
       request.result = result;
-
-      // Move to completed
       this.completed.set(request.id, request);
       this.notifyListeners();
-
-      // Notify completion callback
       request.onComplete?.(result);
-
     } catch (error) {
       if (request.attempts < request.maxAttempts) {
-        // Retry: put back in queue
         request.status = 'retry_scheduled';
         request.retryAfter = new Date(Date.now() + 2000 * Math.pow(2, request.attempts));
         this.queue.unshift(request);
       } else {
-        // Max retries reached
         request.status = 'failed';
         request.error = error instanceof Error ? error.message : String(error);
-        
-        // Move to completed (failed)
         this.completed.set(request.id, request);
-        
-        // Notify error callback
         request.onError?.(request.error);
       }
-      
       this.notifyListeners();
     }
   }
 }
 
-export class TranscriptionQueueService extends AIQueueService {
-  // Legacy compatibility class
-}
+export class TranscriptionQueueService extends AIQueueService {}
 
-// Singleton instance
 let queueInstance: TranscriptionQueueService | null = null;
 
 export function getTranscriptionQueue(): TranscriptionQueueService {

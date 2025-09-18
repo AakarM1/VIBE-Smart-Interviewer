@@ -200,6 +200,7 @@ async def bulk_assign_tests_to_users(
                 admin_id=current_user.id,
                 tenant_id=user.tenant_id,
                 test_type=test_type,
+                status='assigned',  # Explicitly set status
                 due_date=request.due_date,
                 max_attempts=request.max_attempts,
                 notes=request.notes

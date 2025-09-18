@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -8,7 +7,7 @@ import { ProtectedRoute, useAuth } from '@/contexts/auth-context';
 import Header from '@/components/header';
 import Image from 'next/image';
 import { ArrowRightCircle, Headphones, ListChecks, Info, FileText, Briefcase, X, Eye } from 'lucide-react';
-import { configurationService } from '@/lib/config-service';
+import { configurationService, getSjtFollowUpCount } from '@/lib/config-service';
 
 const Stepper = () => (
   <div className="w-full max-w-4xl mx-auto my-12">
@@ -154,7 +153,12 @@ function SelectionPage() {
   const [hasJdtReport, setHasJdtReport] = useState(false);
   const [hasSjtReport, setHasSjtReport] = useState(false);
   const [sjtQuestionCount, setSjtQuestionCount] = useState(5);
+  const [sjtHasFollowUps, setSjtHasFollowUps] = useState(false);
   const [jdtQuestionCount, setJdtQuestionCount] = useState(5);
+  // Raw assignments fallback + tracking whether we attempted fetch
+  const [assignedTestTypes, setAssignedTestTypes] = useState<string[]>([]);
+  const [assignmentFetchTried, setAssignmentFetchTried] = useState(false);
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
   
   const MAX_ATTEMPTS_FALLBACK = 1; // Fallback if backend not ready
 
@@ -162,31 +166,64 @@ function SelectionPage() {
     const loadConfiguration = async () => {
       try {
         console.log('🔧 Loading configuration from database...');
-        
-        // Availability fetch helper
-        const fetchAvailability = async (testType: 'JDT' | 'SJT') => {
-          const token = localStorage.getItem('access_token');
-            const res = await fetch(`/api/v1/tests/availability?test_type=${testType}`, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (!res.ok) return null;
-            return res.json();
-        };
-
-        const [jdtAvail, sjtAvail] = await Promise.all([
-          fetchAvailability('JDT'),
-          fetchAvailability('SJT')
-        ]);
+  const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
+        // New summary endpoint reduces request count and flakiness
+        let jdtAvail: any = null;
+        let sjtAvail: any = null;
+        if (token) {
+          const summaryRes = await fetch(`${API_BASE}/api/v1/tests/availability/summary`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (summaryRes.ok) {
+            const summary = await summaryRes.json();
+            if (summary?.tests) {
+              jdtAvail = summary.tests.find((t: any) => t.test_type === 'JDT') || null;
+              sjtAvail = summary.tests.find((t: any) => t.test_type === 'SJT') || null;
+            }
+          } else {
+            console.warn('⚠️ Summary availability fetch failed; falling back to individual calls');
+            const single = async (tt: 'JDT'|'SJT') => {
+              const r = await fetch(`${API_BASE}/api/v1/tests/availability?test_type=${tt}`, { headers: { 'Authorization': `Bearer ${token}` }});
+              if (r.ok) return r.json();
+              return null;
+            };
+            [jdtAvail, sjtAvail] = await Promise.all([single('JDT'), single('SJT')]);
+          }
+        }
         setJdtAvailability(jdtAvail);
         setSjtAvailability(sjtAvail);
 
-        if (sjtAvail) {
+        // Fallback: fetch raw assignments if availability missing OR not assigned
+        try {
+          const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
+          if (!token) {
+            console.warn('⚠️ No access_token found when attempting assignment fallback fetch');
+          } else {
+            const asRes = await fetch(`${API_BASE}/api/v1/assignments/my-tests`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setAssignmentFetchTried(true);
+            if (!asRes.ok) {
+              console.warn(`⚠️ assignments/my-tests fetch failed status=${asRes.status}`);
+            } else {
+              const assignments = await asRes.json();
+              console.log('📦 Raw assignments fetched:', assignments);
+              const types = (assignments || []).map((a: any) => (a.test_type || '').toUpperCase()).filter(Boolean);
+              setAssignedTestTypes(types);
+            }
+          }
+        } catch (e) {
+          setAssignmentFetchTried(true);
+          console.warn('⚠️ Could not fetch assignments fallback', e);
+        }
+
+        if (sjtAvail && typeof sjtAvail.attempts_used === 'number') {
           setSjtAttempts(sjtAvail.attempts_used);
         } else {
           const sjtAttemptsCount = await getUserAttempts('SJT');
           setSjtAttempts(sjtAttemptsCount);
         }
-        if (jdtAvail) {
+        if (jdtAvail && typeof jdtAvail.attempts_used === 'number') {
           setJdtAttempts(jdtAvail.attempts_used);
         } else {
           const jdtAttemptsCount = await getUserAttempts('JDT');
@@ -196,6 +233,10 @@ function SelectionPage() {
         const jdtConfig = await configurationService.getJDTConfig();
         const sjtConfig = await configurationService.getSJTConfig();
         if (sjtConfig?.settings?.numberOfQuestions) setSjtQuestionCount(sjtConfig.settings.numberOfQuestions);
+        if (sjtConfig?.settings) {
+          const fu = getSjtFollowUpCount(sjtConfig.settings);
+          setSjtHasFollowUps(!!fu && fu > 0);
+        }
         if (jdtConfig?.settings?.numberOfQuestions) {
           const manualQuestions = jdtConfig.settings.numberOfQuestions || 0;
           const aiQuestions = jdtConfig.settings.aiGeneratedQuestions || 0;
@@ -220,9 +261,14 @@ function SelectionPage() {
     loadConfiguration();
   }, [getUserAttempts, user]);
 
-  // Show card if assigned regardless of configuration; disable start until can_start true
-  const showJDT = !!(jdtAvailability && jdtAvailability.assigned);
-  const showSJT = !!(sjtAvailability && sjtAvailability.assigned);
+  // Show card only if assigned to the user (hide unassigned tests entirely)
+  const showJDT = !!(jdtAvailability && jdtAvailability.assigned) || assignedTestTypes.includes('JDT');
+  const showSJT = !!(sjtAvailability && sjtAvailability.assigned) || assignedTestTypes.includes('SJT');
+
+  // Debug instrumentation to help diagnose invisibility
+  if (!loading && !showJDT && !showSJT && assignmentFetchTried) {
+    console.debug('[Dashboard Debug] No tests visible. jdtAvailability=', jdtAvailability, 'sjtAvailability=', sjtAvailability, 'assignedTestTypes=', assignedTestTypes);
+  }
 
   const handleViewSjtReport = () => {
     router.push('/report/SJT');
@@ -265,7 +311,7 @@ function SelectionPage() {
                                 decide="Read each situation. Decide what you would do in that situation."
                                 howItWorks="Each question is 1 situation with response choices. There is no right or wrong response, so choose a response based on what you would really do and not what sounds ideal."
                                 remember="Finish all questions in 1 attempt. If get logged out you will need to reattempt all questions again."
-                                questions={sjtQuestionCount.toString().padStart(2, '0')}
+                                questions={`${sjtQuestionCount.toString().padStart(2, '0')}${sjtHasFollowUps ? '+' : ''}`}
                                 attempts={`${sjtAttempts}/${sjtAvailability?.max_attempts ?? MAX_ATTEMPTS_FALLBACK}`}
                                 link="/sjt"
                 isDisabled={!sjtAvailability?.can_start}

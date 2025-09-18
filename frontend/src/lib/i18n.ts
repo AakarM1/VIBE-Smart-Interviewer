@@ -12,6 +12,14 @@ import { featureFlags } from '@/lib/feature-flags';
 const resources = {
   en: {
     translation: {
+      // Header
+      'header.hello': 'Hello',
+      'header.home': 'Home',
+      'header.admin': 'Admin',
+      'header.logout': 'Logout',
+      'header.login': 'Login',
+      'header.register': 'Register',
+
       // Common UI
       'common.loading': 'Loading...',
       'common.save': 'Save',
@@ -62,6 +70,14 @@ const resources = {
   },
   es: {
     translation: {
+      // Header
+      'header.hello': 'Hola',
+      'header.home': 'Inicio',
+      'header.admin': 'Administrador',
+      'header.logout': 'Cerrar sesión',
+      'header.login': 'Iniciar sesión',
+      'header.register': 'Registrarse',
+
       // Common UI
       'common.loading': 'Cargando...',
       'common.save': 'Guardar',
@@ -112,6 +128,14 @@ const resources = {
   },
   ar: {
     translation: {
+      // Header
+      'header.hello': 'مرحبًا',
+      'header.home': 'الرئيسية',
+      'header.admin': 'المشرف',
+      'header.logout': 'تسجيل الخروج',
+      'header.login': 'تسجيل الدخول',
+      'header.register': 'إنشاء حساب',
+
       // Common UI
       'common.loading': 'جاري التحميل...',
       'common.save': 'حفظ',

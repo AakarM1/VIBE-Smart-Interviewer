@@ -214,6 +214,9 @@ async def upload_media_file_endpoint(
     submission_id: str,
     question_index: int = Form(...),
     file_type: str = Form(...),
+    scenario_id: Optional[str] = Form(None),
+    is_follow_up: Optional[bool] = Form(False),
+    follow_up_sequence: Optional[int] = Form(0),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -254,7 +257,17 @@ async def upload_media_file_endpoint(
     
     # Upload file using storage manager
     try:
-        upload_result = await upload_media_file(file, submission_id, question_index, file_type)
+        upload_result = await upload_media_file(
+            file,
+            submission_id,
+            question_index,
+            file_type,
+            tenant_id=str(submission.tenant_id) if submission.tenant_id else None,
+            user_id=str(submission.user_id) if submission.user_id else None,
+            scenario_id=scenario_id or "unspecified",
+            is_follow_up=bool(is_follow_up),
+            follow_up_sequence=int(follow_up_sequence or 0),
+        )
         
         # Create media file record
         media_file = MediaFile(
@@ -265,8 +278,12 @@ async def upload_media_file_endpoint(
             mime_type=file.content_type,
             file_size=upload_result["file_size"],
             question_index=question_index,
+            scenario_id=scenario_id,
+            is_follow_up=bool(is_follow_up),
+            follow_up_sequence=int(follow_up_sequence or 0),
             storage_provider=upload_result["storage_provider"],
-            storage_url=upload_result.get("storage_url")
+            storage_url=upload_result.get("storage_url"),
+            firebase_path=upload_result.get("firebase_path")
         )
         
         with UserContext(db, current_user):
@@ -279,6 +296,7 @@ async def upload_media_file_endpoint(
             "media_file_id": str(media_file.id),
             "file_path": media_file.file_path,
             "storage_url": upload_result.get("storage_url"),
+            "firebase_path": upload_result.get("firebase_path"),
             "file_size": upload_result["file_size"]
         }
         
@@ -334,12 +352,70 @@ async def list_media_files(
             "file_name": media_file.file_name,
             "file_type": media_file.file_type,
             "question_index": media_file.question_index,
+            "scenario_id": media_file.scenario_id,
+            "is_follow_up": media_file.is_follow_up,
+            "follow_up_sequence": media_file.follow_up_sequence,
             "file_path": media_file.file_path,
             "storage_url": media_file.storage_url or get_media_url(media_file.file_path),
             "created_at": media_file.created_at
         }
         for media_file in media_files
     ]
+
+@router.delete("/{submission_id}/media")
+async def delete_media_files(
+    submission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Delete all media files for a submission"""
+
+    try:
+        submission_uuid = uuid.UUID(submission_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid submission ID format"
+        )
+
+    with UserContext(db, current_user):
+        submission = db.query(Submission).filter(Submission.id == submission_uuid).first()
+
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    # Permission checks
+    if (current_user.role == "candidate" and submission.user_id != current_user.id):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if (current_user.role == "admin" and submission.tenant_id != current_user.tenant_id):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Collect media files
+    with UserContext(db, current_user):
+        media_files = db.query(MediaFile).filter(MediaFile.submission_id == submission_uuid).all()
+
+    deleted = 0
+    errors = []
+    for mf in media_files:
+        # Prefer deleting via provider path; for firebase/local we stored file_path appropriately
+        try:
+            if mf.storage_provider == 'firebase':
+                # file_path is firebase path in our implementation
+                ok = await storage_manager.delete_file(mf.file_path)
+            else:
+                ok = await storage_manager.delete_file(mf.file_path)
+            if ok:
+                deleted += 1
+        except Exception as e:
+            errors.append({"file": mf.file_path, "error": str(e)})
+
+    # Remove db rows
+    with UserContext(db, current_user):
+        for mf in media_files:
+            db.delete(mf)
+        db.commit()
+
+    return {"deleted": deleted, "errors": errors}
 
 @router.get("/user/{user_id}/attempts/{test_type}")
 async def get_user_attempt_count(

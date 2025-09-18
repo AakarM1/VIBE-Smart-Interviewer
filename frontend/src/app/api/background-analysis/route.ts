@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+// Ensure Node.js runtime so process.env is available for Genkit/Gemini keys
+export const runtime = 'nodejs';
 import { apiService } from '@/lib/api-service';
 import { submissionService, convertFirestoreSubmission } from '@/lib/database';
 import { configurationService } from '@/lib/config-service';

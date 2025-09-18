@@ -316,8 +316,7 @@ const TestAssignmentCard = () => {
     return (
         <>
             <Card 
-                className="bg-card border-border hover:border-primary/50 transition-colors h-full flex flex-col hover:shadow-lg cursor-pointer"
-                onClick={() => setShowModal(true)}
+                className="bg-card border-border hover:border-primary/50 transition-colors h-full flex flex-col hover:shadow-lg"
             >
                 <CardHeader className="flex-grow">
                     <div className="mb-4">
@@ -326,6 +325,11 @@ const TestAssignmentCard = () => {
                     <CardTitle>Test Assignments</CardTitle>
                     <CardDescription>Assign tests to your users and manage test access.</CardDescription>
                 </CardHeader>
+                <CardContent>
+                    <Button className="w-full" variant="outline" onClick={() => setShowModal(true)}>
+                        Configure / View
+                    </Button>
+                </CardContent>
             </Card>
             
             {showModal && (

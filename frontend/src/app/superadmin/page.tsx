@@ -216,7 +216,7 @@ function OverviewSection() {
       setError(null);
       try {
         const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-        const access = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+  const access = typeof window !== 'undefined' ? (sessionStorage.getItem('access_token') || localStorage.getItem('access_token')) : null;
         const res = await fetch(`${baseURL}/api/v1/statistics/overview`, {
           headers: {
             'Content-Type': 'application/json',

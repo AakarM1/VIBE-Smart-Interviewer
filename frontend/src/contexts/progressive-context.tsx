@@ -117,8 +117,8 @@ export const ProgressiveProvider = ({ children }: { children: ReactNode }) => {
       const result = await partialSubmissionService.saveQuestionAnswer({
         sessionId: currentSessionId,
         userId: user.id,
-        candidateId: user.candidateId,
-        candidateName: user.candidateName,
+        candidateId: user.candidate_id,
+        candidateName: user.candidate_name,
         interviewType,
         questionIndex,
         totalQuestions,
@@ -193,8 +193,8 @@ export const ProgressiveProvider = ({ children }: { children: ReactNode }) => {
       const result = await partialSubmissionService.saveQuestionAnswer({
         sessionId: currentSessionId,
         userId: user.id,
-        candidateId: user.candidateId,
-        candidateName: user.candidateName,
+        candidateId: user.candidate_id,
+        candidateName: user.candidate_name,
         interviewType,
         questionIndex,
         totalQuestions,
@@ -260,7 +260,10 @@ export const ProgressiveProvider = ({ children }: { children: ReactNode }) => {
    * Start a new session
    */
   const startNewSession = (interviewType: 'JDT' | 'SJT'): string => {
-    const sessionId = partialSubmissionService.generateSessionId();
+    // Defensive: fallback to a simple generator if method not present due to stale bundle
+    const sessionId = typeof (partialSubmissionService as any).generateSessionId === 'function'
+      ? (partialSubmissionService as any).generateSessionId()
+      : `sess_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
     setCurrentSessionId(sessionId);
     setSessionProgress(null);
     setLastSaveResult(null);

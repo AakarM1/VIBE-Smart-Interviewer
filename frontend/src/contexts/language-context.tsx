@@ -8,6 +8,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useAuth } from './auth-context';
 import { isRTLLanguage, getLanguageDisplayName } from '@/lib/i18n-utils';
+import { featureFlags } from '@/lib/feature-flags';
+import i18n from '@/lib/i18n';
+import { translationService } from '@/lib/translation-service';
 
 interface LanguageInfo {
   code: string;
@@ -32,6 +35,7 @@ interface LanguageContextType {
   
   // Translation utilities (simplified)
   translate: (text: string, targetLang?: string) => Promise<string>;
+  translateBatch: (texts: string[], targetLang?: string) => Promise<string[]>;
   getTranslation: (key: string, fallback?: string) => Promise<string>;
   
   // Feature flag
@@ -64,8 +68,8 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
   const [supportedLanguages] = useState<LanguageInfo[]>(DEFAULT_SUPPORTED_LANGUAGES);
   const [defaultLanguage] = useState<string>(DEFAULT_LANGUAGE);
   
-  // For now, multilingual is simplified
-  const isMultilingualEnabled = true;
+  // Feature-gated multilingual enablement
+  const isMultilingualEnabled = featureFlags.isI18nEnabled();
   
   // Initialize user's preferred language
   useEffect(() => {
@@ -73,8 +77,8 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
       let preferredLang = DEFAULT_LANGUAGE;
       
       // Priority 1: User's saved preference in profile
-      if (user?.preferred_language) {
-        preferredLang = user.preferred_language;
+      if (user?.language_preference) {
+        preferredLang = user.language_preference;
       } 
       // Priority 2: Browser localStorage
       else if (typeof window !== 'undefined') {
@@ -115,8 +119,13 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
       localStorage.setItem(LANGUAGE_STORAGE_KEY, languageCode);
     }
     
+    // Sync i18next language when feature enabled
+    if (isMultilingualEnabled) {
+      try { i18n.changeLanguage(languageCode); } catch {}
+    }
+
     // TODO: Update user profile if logged in through API
-    if (user && user.preferred_language !== languageCode) {
+    if (user && user.language_preference !== languageCode) {
       try {
         // This would need to be implemented in the API service
         console.log('💾 Would update user language preference via API');
@@ -143,22 +152,41 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
 
   // Simplified translation - for now just returns the original text
   const translate = async (text: string, targetLang?: string): Promise<string> => {
-    if (!isMultilingualEnabled) return text;
-    
-    const target = targetLang || currentLanguage;
-    if (target === 'en') return text; // No translation needed for English
-    
-    // TODO: Implement actual translation service integration
-    console.log(`Would translate "${text}" to ${target}`);
-    return text; // Fallback to original for now
+    if (!isMultilingualEnabled || !text) return text;
+    const target = (targetLang || currentLanguage || DEFAULT_LANGUAGE).toLowerCase();
+    if (target === 'en') return text; // No translation needed
+    try {
+      return await translationService.translate(text, target);
+    } catch {
+      return text;
+    }
+  };
+
+  const translateBatch = async (texts: string[], targetLang?: string): Promise<string[]> => {
+    if (!isMultilingualEnabled || !texts || texts.length === 0) return texts || [];
+    const target = (targetLang || currentLanguage || DEFAULT_LANGUAGE).toLowerCase();
+    if (target === 'en') return texts;
+    try {
+      const results = await translationService.translateBatch(
+        texts.map(t => ({ text: t, targetLang: target }))
+      );
+      return results.map(r => (r.success ? r.translated : r.original));
+    } catch {
+      return texts;
+    }
   };
 
   // Simplified translation lookup
   const getTranslation = async (key: string, fallback?: string): Promise<string> => {
     if (!isMultilingualEnabled) return fallback || key;
-    
-    // TODO: Implement translation catalog lookup
-    return fallback || key;
+    try {
+      // Use i18next for UI key translations
+      const result = i18n.t(key);
+      if (result && result !== key) return result as string;
+      return fallback || key;
+    } catch {
+      return fallback || key;
+    }
   };
 
   const value: LanguageContextType = {
@@ -170,6 +198,7 @@ export const LanguageProvider: React.FC<LanguageProviderProps> = ({ children }) 
     setLanguage,
     getSupportedLanguages,
     translate,
+  translateBatch,
     getTranslation,
     isMultilingualEnabled
   };

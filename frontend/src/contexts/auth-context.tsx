@@ -215,13 +215,37 @@ export function AuthProvider({ children }: AuthProviderProps) {
     },
     saveSubmission: async (submission: any) => {
       try {
-        console.log('💾 Saving submission via FastAPI:', submission);
-        const result = await apiService.createSubmission(submission);
+        // Normalize payload to FastAPI SubmissionCreate schema
+        // Accept both old shape ({ candidateName, testType, history, candidateLanguage, uiLanguage })
+        // and new shape; map to snake_case used by backend.
+        const payload = {
+          candidate_name: submission.candidate_name || submission.candidateName || user?.candidate_name || 'Candidate',
+          candidate_id: submission.candidate_id || submission.candidateId || user?.candidate_id,
+          test_type: submission.test_type || submission.testType,
+          candidate_language: submission.candidate_language || submission.candidateLanguage || (user as any)?.language_preference || 'en',
+          ui_language: submission.ui_language || submission.uiLanguage || 'en',
+          conversation_history: submission.conversation_history || submission.history || [],
+        } as const;
+
+        if (!payload.candidate_id) {
+          throw new Error('Missing candidate_id for submission');
+        }
+        if (!payload.test_type) {
+          throw new Error('Missing test_type for submission');
+        }
+
+        console.log('💾 Saving submission via FastAPI (normalized):', {
+          ...payload,
+          conversation_history: Array.isArray(payload.conversation_history)
+            ? `entries=${payload.conversation_history.length}`
+            : 'invalid',
+        });
+        const result = await apiService.createSubmission(payload);
         if (result.data) {
           console.log('✅ Submission saved successfully:', result.data.id);
           return result.data;
         }
-        throw new Error('Failed to save submission');
+        throw new Error(result.error || 'Failed to save submission');
       } catch (error) {
         console.error('❌ Error saving submission:', error);
         throw error;

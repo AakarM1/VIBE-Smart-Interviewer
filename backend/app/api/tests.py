@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel
 import uuid
+import os
 from datetime import datetime, timedelta
 
 from app.database import get_db
@@ -62,6 +63,10 @@ async def get_test_availability(
     if tt not in ("JDT", "SJT"):
         raise HTTPException(status_code=400, detail="Invalid test_type")
 
+    # Config presence (look up early so it's available for auto-assignment logic)
+    cfg = _get_config(db, current_user.tenant_id, tt)
+    configured = bool(cfg)
+
     # Is there an assignment? (Candidates only need assignment; admins/superadmins considered always assigned for preview purposes)
     assignment = None
     assigned = False
@@ -76,13 +81,32 @@ async def get_test_availability(
             assigned = True
             assignment_status = assignment.status
             max_attempts = assignment.max_attempts or MAX_ATTEMPTS_DEFAULT
+        else:
+            # Optional auto-assignment: if enabled and a config exists, create assignment on-the-fly
+            if configured and os.getenv('AUTO_ASSIGN_ON_AVAILABILITY', '0') in ('1','true','True'):
+                try:
+                    new_assignment = TestAssignment(
+                        id=str(uuid.uuid4()),
+                        user_id=current_user.id,
+                        admin_id=current_user.id,  # placeholder admin linkage
+                        tenant_id=current_user.tenant_id,
+                        test_type=tt,
+                        status='assigned',
+                        max_attempts=MAX_ATTEMPTS_DEFAULT
+                    )
+                    db.add(new_assignment)
+                    db.commit()
+                    db.refresh(new_assignment)
+                    assignment = new_assignment
+                    assigned = True
+                    assignment_status = 'assigned'
+                    logger.info('[auto-assignment] Created assignment user=%s test=%s', current_user.id, tt)
+                except Exception as e:
+                    logger.error('Failed auto-assignment user=%s test=%s error=%s', current_user.id, tt, e)
     else:
         assigned = True
         assignment_status = 'admin_preview'
 
-    # Config presence
-    cfg = _get_config(db, current_user.tenant_id, tt)
-    configured = bool(cfg)
 
     # Attempts used (completed attempts only)
     # Count completed attempts
@@ -231,6 +255,179 @@ class CompleteAttemptRequest(BaseModel):
 class CompleteAttemptResponse(BaseModel):
     attempt: TestAttemptResponse
     message: str
+
+class TestAvailabilitySummaryItem(BaseModel):
+    test_type: str
+    assigned: bool
+    configured: bool
+    attempts_used: int
+    max_attempts: int
+    can_start: bool
+    assignment_status: Optional[str] = None
+
+class TestAvailabilitySummaryResponse(BaseModel):
+    tests: List[TestAvailabilitySummaryItem]
+
+@router.get("/availability/summary", response_model=TestAvailabilitySummaryResponse)
+async def get_availability_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Return availability info for all supported test types (currently SJT & JDT).
+
+    This consolidates multiple calls so the frontend can reliably decide which
+    cards to show even if one configuration is missing.
+    """
+    summary_items: List[TestAvailabilitySummaryItem] = []
+    for tt in ("SJT", "JDT"):
+        try:
+            avail = await get_test_availability(tt, db, current_user)  # type: ignore
+            summary_items.append(TestAvailabilitySummaryItem(**avail.dict()))
+        except HTTPException as e:
+            # If invalid or inaccessible, still include placeholder so UI can debug
+            if e.status_code == 400:
+                continue
+            summary_items.append(TestAvailabilitySummaryItem(
+                test_type=tt,
+                assigned=False,
+                configured=False,
+                attempts_used=0,
+                max_attempts=1,
+                can_start=False,
+                assignment_status=None
+            ))
+    return TestAvailabilitySummaryResponse(tests=summary_items)
+
+# =======================
+# Incremental answer submission (minimal additive endpoint)
+# =======================
+
+class SubmitAnswerRequest(BaseModel):
+    """Incoming answer payload.
+    base_question_index: index of the original/base question this answer belongs to (for follow-ups)
+    follow_up_sequence: 0 for base question answer, 1..N for follow-ups relative order
+    is_follow_up: distinguishes base question answers vs generated follow-ups
+    """
+    question_index: int
+    answer_text: str
+    is_follow_up: bool = False
+    base_question_index: Optional[int] = None
+    follow_up_sequence: Optional[int] = None
+    duration_seconds: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+class SubmitAnswerResponse(BaseModel):
+    stored: bool
+    can_generate_follow_up: bool
+    remaining_follow_ups: int
+    total_follow_ups_for_base: int
+    max_follow_ups: int
+    answer: Dict[str, Any]
+
+def _derive_max_follow_ups(config_data: Dict[str, Any]) -> int:
+    """Replicates frontend precedence: followUpCount -> aiGeneratedQuestions -> default 1; cap at 5."""
+    settings = (config_data or {}).get('settings') or {}
+    val = settings.get('followUpCount')
+    if val is None:
+        val = settings.get('aiGeneratedQuestions') or settings.get('aiQuestions')
+    if val is None:
+        val = 1
+    try:
+        val = int(val)
+    except Exception:
+        val = 1
+    if val < 0:
+        val = 0
+    return min(val, 5)
+
+@router.post("/attempts/{attempt_id}/answers", response_model=SubmitAnswerResponse)
+async def submit_attempt_answer(
+    attempt_id: str,
+    payload: SubmitAnswerRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Store a single answer incrementally and report remaining follow-up allowance.
+
+    This is intentionally minimal and additive – it does not replace existing
+    front-end follow up generation logic. It simply persists answers inside
+    attempt_metadata.answers and tracks per-base-question follow_up_counts.
+    """
+    attempt = db.query(TestAttempt).filter(TestAttempt.id == attempt_id).first()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Attempt not found")
+    if current_user.role == 'candidate' and attempt.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    if attempt.status != 'in_progress':
+        raise HTTPException(status_code=400, detail="Attempt not active")
+
+    # Load config to determine follow-up limit (only relevant for SJT right now)
+    cfg = _get_config(db, current_user.tenant_id, attempt.test_type)
+    config_data = cfg.config_data if cfg else {}
+    max_follow = _derive_max_follow_ups(config_data) if attempt.test_type == 'SJT' else 0
+
+    meta = attempt.attempt_metadata or {}
+    answers: List[Dict[str, Any]] = meta.get('answers') or []
+    follow_counts: Dict[str, int] = meta.get('follow_up_counts') or {}
+
+    # Normalize indices
+    base_index = payload.base_question_index if payload.base_question_index is not None else payload.question_index
+    is_follow_up = payload.is_follow_up
+    if not is_follow_up:
+        # Base question answer resets / initializes counting bucket
+        follow_counts.setdefault(str(base_index), 0)
+        sequence = 0
+    else:
+        # Enforce cap
+        existing = follow_counts.get(str(base_index), 0)
+        if existing >= max_follow:
+            # Still store answer but cannot allocate further follow-ups
+            sequence = existing + 1  # informational only (beyond cap)
+        else:
+            existing += 1
+            follow_counts[str(base_index)] = existing
+            sequence = existing
+
+    answer_id = str(uuid.uuid4())
+    stored_answer = {
+        'id': answer_id,
+        'question_index': payload.question_index,
+        'base_question_index': base_index,
+        'is_follow_up': is_follow_up,
+        'follow_up_sequence': payload.follow_up_sequence if payload.follow_up_sequence is not None else sequence,
+        'answer_text': payload.answer_text,
+        'duration_seconds': payload.duration_seconds,
+        'metadata': payload.metadata,
+        'created_at': datetime.utcnow().isoformat() + 'Z'
+    }
+    answers.append(stored_answer)
+
+    # Compute remaining capacity for this base question
+    used = follow_counts.get(str(base_index), 0)
+    remaining = 0
+    if attempt.test_type == 'SJT':
+        remaining = max(0, max_follow - used)
+
+    can_generate_follow_up = is_follow_up is False and max_follow > 0 or (is_follow_up and remaining > 0)
+    # A slightly safer rule: if we've just submitted a base answer and max_follow > 0, allow generation decision.
+    if is_follow_up and remaining == 0:
+        can_generate_follow_up = False
+
+    # Persist
+    meta['answers'] = answers
+    meta['follow_up_counts'] = follow_counts
+    attempt.attempt_metadata = meta
+    db.commit()
+    db.refresh(attempt)
+
+    return SubmitAnswerResponse(
+        stored=True,
+        can_generate_follow_up=can_generate_follow_up,
+        remaining_follow_ups=remaining,
+        total_follow_ups_for_base=follow_counts.get(str(base_index), 0),
+        max_follow_ups=max_follow,
+        answer=stored_answer
+    )
 
 @router.get("/attempts/{attempt_id}", response_model=TestAttemptResponse)
 async def get_attempt(

@@ -56,10 +56,32 @@ class FastAPIService {
   constructor() {
     this.baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
     
-    // Load tokens from localStorage if available
+    // Load tokens from sessionStorage (per-tab). Migrate from localStorage if found.
     if (typeof window !== 'undefined') {
-      this.accessToken = localStorage.getItem('access_token');
-      this.refreshToken = localStorage.getItem('refresh_token');
+      const ss = window.sessionStorage;
+      const ls = window.localStorage;
+
+      // Prefer sessionStorage
+      this.accessToken = ss.getItem('access_token');
+      this.refreshToken = ss.getItem('refresh_token');
+
+      // Migrate from localStorage if sessionStorage empty but localStorage has tokens
+      const lsAccess = ls.getItem('access_token');
+      const lsRefresh = ls.getItem('refresh_token');
+      if (!this.accessToken && lsAccess) {
+        this.accessToken = lsAccess;
+        ss.setItem('access_token', lsAccess);
+      }
+      if (!this.refreshToken && lsRefresh) {
+        this.refreshToken = lsRefresh;
+        ss.setItem('refresh_token', lsRefresh);
+      }
+
+      // Clear localStorage tokens to prevent cross-tab auth leakage
+      if (lsAccess || lsRefresh) {
+        ls.removeItem('access_token');
+        ls.removeItem('refresh_token');
+      }
     }
   }
 
@@ -165,6 +187,9 @@ class FastAPIService {
     this.refreshToken = null;
     
     if (typeof window !== 'undefined') {
+      // Clear from both storages defensively
+      sessionStorage.removeItem('access_token');
+      sessionStorage.removeItem('refresh_token');
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
     }
@@ -175,8 +200,12 @@ class FastAPIService {
     this.refreshToken = refreshToken;
     
     if (typeof window !== 'undefined') {
-      localStorage.setItem('access_token', accessToken);
-      localStorage.setItem('refresh_token', refreshToken);
+      // Store in sessionStorage for per-tab isolation
+      sessionStorage.setItem('access_token', accessToken);
+      sessionStorage.setItem('refresh_token', refreshToken);
+      // Ensure localStorage copies are removed
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
     }
   }
 

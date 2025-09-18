@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { configurationService, getSjtFollowUpCount, type SJTConfig } from '@/lib/config-service';
 // 🔒 MINIMAL IMPACT IMPORTS - Progressive upload support for SJT
 import { ProgressiveProvider, useProgressive } from '@/contexts/progressive-context';
+import { dataUriToBlob, uploadMediaToStorage } from '@/lib/media-storage';
 // Note: SessionRecoveryModal is imported but will be used in a separate PR
 // import { SessionRecoveryModal } from '@/components/session-recovery-modal';
 import { ProgressiveUploadIndicator } from '@/components/progressive-upload-indicator';
@@ -335,9 +336,6 @@ function SJTInterviewPage() {
         }
       }
       
-      // Set completed status after uploads are done
-      setStatus('COMPLETED');
-      
       try {
         // First, save the submission to database immediately
         console.log('💾 Saving submission to database...');
@@ -374,15 +372,45 @@ function SJTInterviewPage() {
             }]
         };
 
-        // Save submission immediately with basic analysis
-        const submission = await saveSubmission({
+        // Save submission immediately with basic analysis, normalized in saveSubmission
+        const created = await saveSubmission({
             candidateName: preInterviewDetails!.name,
+            candidateId: (user as any)?.candidate_id || (user as any)?.id,
             testType: 'SJT',
-            report: basicResult,
+            candidateLanguage: preInterviewDetails?.language || 'English',
+            uiLanguage: preInterviewDetails?.language || 'English',
             history: conversationHistory,
+            report: basicResult,
         });
 
-        console.log('✅ Submission saved successfully');
+        console.log('✅ Submission saved successfully', created?.id);
+
+        // Upload media files associated with each answered entry
+        if (created?.id && Array.isArray(conversationHistory)) {
+          for (let i = 0; i < conversationHistory.length; i++) {
+            const entry = conversationHistory[i] as any;
+            const dataUri: string | undefined = entry.videoDataUri || entry.audioDataUri;
+            if (!dataUri) continue;
+
+            try {
+              const blob = await dataUriToBlob(dataUri);
+              const mediaType: 'video' | 'audio' = entry.videoDataUri ? 'video' : 'audio';
+              const scenarioId = sjtScenarios[i]?.id;
+              const isFollowUp = typeof entry.question === 'string' && entry.question.toLowerCase().includes('follow-up');
+              await uploadMediaToStorage(
+                blob,
+                String(created.id),
+                i,
+                mediaType,
+                preInterviewDetails?.name,
+                { scenarioId, isFollowUp }
+              );
+            } catch (mediaErr) {
+              console.warn('⚠️ Media upload failed for entry', i, mediaErr);
+              // Continue uploading remaining files; do not block submission
+            }
+          }
+        }
 
         // Note: We remove background analysis triggering here since it will happen from admin side
 
@@ -390,7 +418,8 @@ function SJTInterviewPage() {
           title: 'Thank you for your submission!',
           description: 'The hiring team will get back to you with the next steps.',
         });
-        
+        // Set completed status after uploads are done
+        setStatus('COMPLETED');
       } catch (error) {
         console.error("❌ Error in finish interview:", error);
         toast({
@@ -784,7 +813,7 @@ function SJTInterviewPage() {
 
   useEffect(() => {
     if (user && !preInterviewDetails) {
-        setPreInterviewDetails({ name: user.candidateName, roleCategory: "Situational Judgement Test", language: 'English' });
+        setPreInterviewDetails({ name: user.candidate_name, roleCategory: "Situational Judgement Test", language: 'English' });
     }
   }, [user, preInterviewDetails]);
 

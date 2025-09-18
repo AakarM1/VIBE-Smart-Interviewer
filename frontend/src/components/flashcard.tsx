@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Send, Type, CheckCircle, RefreshCcw, Info, ArrowLeft, ArrowRight, Video, Mic, Square, X } from 'lucide-react';
 import MediaCapture from './audio-recorder';
 import RealTimeMediaCapture from './real-time-audio-recorder';
-import { transcribeAudio, type TranscribeAudioInput } from '@/ai/flows/transcribe-audio';
+import { transcribeViaServer } from '@/lib/transcribe';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { InterviewMode } from '@/types';
@@ -265,7 +265,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
   };
 
   const handleTranscribe = async (dataUri: string) => {
-    if (!dataUri) {
+    if (!dataUri && !mediaData?.blob) {
       toast({
         variant: "destructive",
         title: "No media recorded",
@@ -275,8 +275,9 @@ const Flashcard: React.FC<FlashcardProps> = ({
     }
     setIsTranscribing(true);
     try {
-      const input: TranscribeAudioInput = { audioDataUri: dataUri };
-      const result = await transcribeAudio(input);
+      const result = mediaData?.blob
+        ? await transcribeViaServer({ blob: mediaData.blob })
+        : await transcribeViaServer({ audioDataUri: dataUri });
       setEditableTranscription(result.transcription);
     } catch (error) {
       console.error("Transcription error:", error);
