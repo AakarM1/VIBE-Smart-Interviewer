@@ -24,6 +24,7 @@ const AnalyzeSJTResponseInputSchema = z.object({
   bestResponseRationale: z.string().describe('A description of the ideal thought process or actions for the best possible response.'),
   worstResponseRationale: z.string().describe('A description of the thought process or actions that would constitute the worst possible response.'),
   assessedCompetency: z.string().describe('The primary competency being measured by this scenario (e.g., "Problem Solving").'),
+  competencyDescription: z.string().optional().describe('Optional: A short description/definition of the competency to guide evaluation.'),
   candidateAnswer: z.string().optional().describe("The candidate's transcribed answer to the question (for backward compatibility)."),
 });
 export type AnalyzeSJTResponseInput = z.infer<typeof AnalyzeSJTResponseInputSchema>;
@@ -47,6 +48,7 @@ export async function analyzeSingleCompetency(input: {
     isFollowUp?: boolean;
   }>;
   targetCompetency: string;
+  competencyDescription?: string;
   bestResponseRationale: string;
   worstResponseRationale: string;
 }): Promise<AnalyzeSJTResponseOutput> {
@@ -56,6 +58,7 @@ export async function analyzeSingleCompetency(input: {
     bestResponseRationale: input.bestResponseRationale,
     worstResponseRationale: input.worstResponseRationale,
     assessedCompetency: input.targetCompetency,
+    competencyDescription: input.competencyDescription,
   });
 }
 
@@ -83,6 +86,10 @@ const prompt = ai.definePrompt({
     {{/if}}
 
     **COMPETENCY BEING EVALUATED**: {{{assessedCompetency}}}
+
+  {{#if competencyDescription}}
+  **COMPETENCY DESCRIPTION**: {{{competencyDescription}}}
+  {{/if}}
 
     **REFERENCE RESPONSES**:
     - **BEST response approach**: {{{bestResponseRationale}}}

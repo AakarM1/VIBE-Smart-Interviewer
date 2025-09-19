@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import Header from '@/components/header';
 import { configurationService } from '@/lib/config-service';
+import { apiService } from '@/lib/api-service';
 
 const getUniqueId = () => Date.now() + Math.random();
 
@@ -38,6 +39,7 @@ interface TestSettings {
 const SJTConfigPage = () => {
   const { toast } = useToast();
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [competencyOptions, setCompetencyOptions] = useState<Array<{ name: string; code?: string }>>([]);
   const [settings, setSettings] = useState<TestSettings>({ 
     timeLimit: 0, 
     numberOfQuestions: 5, 
@@ -80,7 +82,22 @@ const SJTConfigPage = () => {
       }
     };
 
+    const loadCompetencies = async () => {
+      try {
+        const res = await apiService.listCompetencies({ include_inactive: false });
+        const items = (res.data || []) as any[];
+        const opts = items
+          .filter((c) => c && (c.competency_name || c.competency_code))
+          .map((c) => ({ name: String(c.competency_name || c.competency_code), code: c.competency_code }));
+        setCompetencyOptions(opts);
+        console.log(`📚 Loaded ${opts.length} competencies for SJT selector`);
+      } catch (e) {
+        console.warn('⚠️ Failed to load competencies for SJT config; suggestions disabled');
+      }
+    };
+
     loadConfiguration();
+    loadCompetencies();
   }, []);
 
   const handleScenarioChange = (id: number, field: keyof Omit<Scenario, 'id'>, value: string) => {
@@ -249,11 +266,20 @@ const SJTConfigPage = () => {
                                 placeholder="e.g., Customer Focus, Problem Solving, Communication" 
                                 value={scenario.assessedCompetency} 
                                 onChange={(e) => handleScenarioChange(scenario.id, 'assessedCompetency', e.target.value)} 
+                                list="competency-options"
                                 required 
                             />
                             <p className="text-sm text-muted-foreground">
                                 Enter multiple competencies separated by commas. Each competency will be analyzed separately in the report.
                             </p>
+                            {/* Global datalist for competency suggestions */}
+                            {competencyOptions.length > 0 && index === 0 && (
+                              <datalist id="competency-options">
+                                {competencyOptions.map((opt, i) => (
+                                  <option key={`${opt.code || opt.name}-${i}`} value={opt.name} />
+                                ))}
+                              </datalist>
+                            )}
                         </div>
                         {scenarios.length > 1 && (
                         <Button variant="ghost" size="icon" onClick={() => removeScenario(scenario.id)} type="button" className="absolute top-2 right-2">

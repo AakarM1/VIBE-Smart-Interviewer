@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 type Competency = {
   id: string;
@@ -35,19 +35,20 @@ export default function CompetencyManagement() {
 
   const baseURL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-  const headers = useMemo(() => {
-    const access = typeof window !== "undefined" ? localStorage.getItem("access_token") : null;
+  // Always build headers at call time to pick up the latest per-tab token (stored in sessionStorage)
+  const getHeaders = () => {
+    const access = typeof window !== "undefined" ? (sessionStorage.getItem("access_token") || localStorage.getItem("access_token")) : null;
     return {
       "Content-Type": "application/json",
       ...(access ? { Authorization: `Bearer ${access}` } : {}),
     } as Record<string, string>;
-  }, []);
+  };
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${baseURL}/api/v1/competencies` , { headers });
+  const res = await fetch(`${baseURL}/api/v1/competencies` , { headers: getHeaders() });
       if (!res.ok) {
         const body = await res.json().catch(() => ({} as any));
         throw new Error(body?.detail || `Failed to list (${res.status})`);
@@ -69,7 +70,7 @@ export default function CompetencyManagement() {
     try {
       const res = await fetch(`${baseURL}/api/v1/competencies`, {
         method: "POST",
-        headers,
+        headers: getHeaders(),
         body: JSON.stringify(form),
       });
       if (!res.ok) {
@@ -88,7 +89,7 @@ export default function CompetencyManagement() {
     if (!confirm(`Delete competency ${code}? This cannot be undone.`)) return;
     setError(null);
     try {
-      const res = await fetch(`${baseURL}/api/v1/competencies/${encodeURIComponent(code)}?hard=true`, { method: "DELETE", headers });
+  const res = await fetch(`${baseURL}/api/v1/competencies/${encodeURIComponent(code)}?hard=true`, { method: "DELETE", headers: getHeaders() });
       if (!res.ok) {
         const body = await res.json().catch(() => ({} as any));
         throw new Error(body?.detail || `Delete failed (${res.status})`);
