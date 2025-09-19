@@ -18,6 +18,7 @@ const TranscribeAudioInputSchema = z.object({
     .describe(
       "The audio data to transcribe, as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'"
     ),
+  languageCode: z.string().optional().describe('Optional BCP-47/ISO language code hint for the transcription (e.g., en, es, ar).')
 });
 
 export type TranscribeAudioInput = z.infer<typeof TranscribeAudioInputSchema>;
@@ -38,6 +39,8 @@ const transcribeAudioPrompt = ai.definePrompt({
   output: {schema: TranscribeAudioOutputSchema},
   model: TRANSCRIPTION_MODEL, // Use model from centralized config
   prompt: `You are a highly accurate audio transcription service. Your only task is to transcribe the following audio file. Do not add any commentary or introductory text. Provide only the transcribed text.
+
+If a language code hint is provided, transcribe in that language. Language hint: {{{languageCode}}}
 
 Audio for transcription: {{media url=audioDataUri}}`,
 });

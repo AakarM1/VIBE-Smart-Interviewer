@@ -16,7 +16,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
   progressiveSave: false,      // Progressive per-question saving
   enhancedProgress: false,     // Enhanced progress indicators
   adminLiveTracking: false,    // Live admin tracking
-  i18nEnabled: false,          // Multilingual support
+  i18nEnabled: true,           // Multilingual support (enabled by default)
 };
 
 /**

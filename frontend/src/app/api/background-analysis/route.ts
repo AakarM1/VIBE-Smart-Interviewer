@@ -132,7 +132,8 @@ export async function POST(request: NextRequest) {
       let followUpPenalty = 0;
       try {
         const sjtConfig = await configurationService.getSJTConfig();
-        followUpPenalty = sjtConfig?.followUpPenalty || 0;
+        const penalty = sjtConfig?.settings?.followUpPenalty ?? sjtConfig?.followUpPenalty;
+        followUpPenalty = typeof penalty === 'number' ? penalty : 0;
         console.log(`📊 Using follow-up penalty: ${followUpPenalty}%`);
       } catch (error) {
         console.warn('⚠️ Could not retrieve SJT config, using default penalty of 0%');
@@ -142,16 +143,24 @@ export async function POST(request: NextRequest) {
       let activeCompetencyNames: string[] = [];
       let competencyNameSet = new Set<string>();
       let competencyCodeSet = new Set<string>();
+      // Maps for competency descriptions
+      const competencyNameToDescription = new Map<string, string>();
+      const competencyCodeToDescription = new Map<string, string>();
       try {
         const compsRes = await apiService.listCompetencies({ include_inactive: false });
         const comps = compsRes.data || [];
         for (const c of comps as any[]) {
-          if (c.competency_name) {
-            activeCompetencyNames.push(c.competency_name);
-            competencyNameSet.add(String(c.competency_name).toLowerCase());
+          const name = c.competency_name ? String(c.competency_name) : undefined;
+          const code = c.competency_code ? String(c.competency_code) : undefined;
+          const desc = c.competency_description ? String(c.competency_description) : '';
+          if (name) {
+            activeCompetencyNames.push(name);
+            competencyNameSet.add(name.toLowerCase());
+            if (desc) competencyNameToDescription.set(name.toLowerCase(), desc);
           }
-          if (c.competency_code) {
-            competencyCodeSet.add(String(c.competency_code).toLowerCase());
+          if (code) {
+            competencyCodeSet.add(code.toLowerCase());
+            if (desc) competencyCodeToDescription.set(code.toLowerCase(), desc);
           }
         }
         console.log(`📚 Loaded ${activeCompetencyNames.length} active competencies for validation`);
@@ -229,11 +238,15 @@ export async function POST(request: NextRequest) {
           
           if (primaryCompetency) {
             console.log(`🎯 Evaluating primary "${primaryCompetency}" competency`);
+            // Lookup optional description from dictionary (by name or code)
+            const lower = String(primaryCompetency).toLowerCase();
+            const competencyDescription = competencyNameToDescription.get(lower) || competencyCodeToDescription.get(lower);
             
             const result = await analyzeSingleCompetency({
               situation,
               conversationHistory,
               targetCompetency: primaryCompetency,
+              competencyDescription,
               bestResponseRationale,
               worstResponseRationale
             });
@@ -322,12 +335,15 @@ export async function POST(request: NextRequest) {
             for (const [entryIndex, entry] of answeredEntries.entries()) {
               for (const competency of assessedCompetencies) {
                 try {
+                const lower = String(competency).toLowerCase();
+                const competencyDescription = competencyNameToDescription.get(lower) || competencyCodeToDescription.get(lower);
                 const sjtAnalysisInput: AnalyzeSJTResponseInput = {
                   situation,
                   question: entry.question,
                   bestResponseRationale,
                   worstResponseRationale,
                   assessedCompetency: competency,
+                  competencyDescription,
                   candidateAnswer: entry.answer!,
                 };
                 

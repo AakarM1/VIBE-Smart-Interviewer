@@ -5,24 +5,28 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/language-context';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
 import { Languages, Globe, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { translationService } from '@/lib/translation-service';
 
 interface LanguageSelectorProps {
   variant?: 'dropdown' | 'card' | 'inline';
   showFlag?: boolean;
   className?: string;
+  // If true, show all known languages (independent of admin-configured list)
+  useAllLanguages?: boolean;
 }
 
 export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   variant = 'dropdown',
   showFlag = true,
-  className = ''
+  className = '',
+  useAllLanguages = false,
 }) => {
   const { 
     currentLanguage, 
@@ -33,6 +37,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   } = useLanguage();
   const { toast } = useToast();
   const [isChanging, setIsChanging] = useState(false);
+  const allLanguages = useMemo(() => translationService.getSupportedLanguages(), []);
+  const languagesToShow = useAllLanguages ? allLanguages : supportedLanguages;
   
   // Don't render if multilingual is disabled or not ready
   if (!isMultilingualEnabled || !ready) {
@@ -40,7 +46,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   }
   
   // Don't render if only one language is supported
-  if (supportedLanguages.length <= 1) {
+  if (languagesToShow.length <= 1) {
     return null;
   }
   
@@ -51,7 +57,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
     try {
       await setLanguage(newLanguage);
       
-      const selectedLang = supportedLanguages.find(lang => lang.code === newLanguage);
+      const selectedLang = languagesToShow.find(lang => lang.code === newLanguage);
       toast({
         title: 'Language Changed',
         description: `Interface language changed to ${selectedLang?.nativeName || newLanguage}`,
@@ -101,7 +107,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
             </div>
           </SelectTrigger>
           <SelectContent>
-            {supportedLanguages.map((lang) => (
+            {languagesToShow.map((lang) => (
               <SelectItem key={lang.code} value={lang.code}>
                 <div className="flex items-center gap-2">
                   {showFlag && (
@@ -129,7 +135,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
             <h3 className="font-semibold">Choose Your Language</h3>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {supportedLanguages.map((lang) => (
+            {languagesToShow.map((lang) => (
               <Button
                 key={lang.code}
                 variant={lang.code === currentLanguage ? 'default' : 'outline'}
@@ -161,7 +167,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
           disabled={isChanging}
           className="bg-transparent border-none text-sm focus:outline-none cursor-pointer"
         >
-          {supportedLanguages.map((lang) => (
+          {languagesToShow.map((lang) => (
             <option key={lang.code} value={lang.code}>
               {showFlag ? `${getFlagEmoji(lang.code)} ` : ''}{lang.nativeName}
             </option>

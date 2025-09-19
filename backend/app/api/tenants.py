@@ -12,7 +12,8 @@ from app.database import get_db
 from app.auth import get_current_active_user, require_superadmin, UserContext
 from app.models import (
     Tenant, TenantCreate, TenantResponse,
-    User, UserCreate, UserResponse
+    User, UserCreate, UserResponse,
+    BulkUserGenerateRequest, BulkUserGenerateResponse, GeneratedCredential
 )
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
@@ -316,6 +317,70 @@ async def create_tenant_user(
         db.refresh(new_user)
     
     return new_user
+
+@router.post("/{tenant_id}/users/generate", response_model=BulkUserGenerateResponse)
+async def generate_tenant_users(
+    tenant_id: str,
+    request: BulkUserGenerateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_superadmin)
+):
+    """Generate multiple candidate users for a tenant (superadmin only).
+    Emails follow pattern: {prefix}{N}@{domain}. Passwords can be fixed or random.
+    """
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid tenant ID format"
+        )
+
+    # Verify tenant exists
+    with UserContext(db, current_user):
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_uuid).first()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    # Validate fixed password usage
+    if request.use_fixed_password and not request.fixed_password:
+        raise HTTPException(status_code=400, detail="fixed_password is required when use_fixed_password is true")
+
+    from app.auth import get_password_hash
+    import secrets
+
+    credentials: list[GeneratedCredential] = []
+    created_count = 0
+    name_prefix = request.name_prefix or "Candidate"
+
+    for i in range(request.start_from, request.start_from + request.count):
+        email = f"{request.email_prefix}{i}@{request.email_domain}".lower()
+        # Skip if email already exists
+        existing = db.query(User).filter(User.email == email).first()
+        if existing:
+            continue
+
+        raw_password = request.fixed_password if request.use_fixed_password else secrets.token_urlsafe(10)
+        user = User(
+            email=email,
+            password_hash=get_password_hash(raw_password),
+            candidate_name=f"{name_prefix} {i}",
+            candidate_id=f"{request.email_prefix}{i}",
+            client_name=tenant.name,
+            role="candidate",
+            preferred_language="en",
+            language_code="en",
+            tenant_id=tenant_uuid
+        )
+        db.add(user)
+        db.flush()  # get generated ID before commit
+
+        credentials.append(GeneratedCredential(user_id=user.id, email=email, password=raw_password))
+        created_count += 1
+
+    db.commit()
+
+    return BulkUserGenerateResponse(created=created_count, credentials=credentials)
 
 @router.get("/{tenant_id}/statistics")
 async def get_tenant_statistics(

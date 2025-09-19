@@ -23,6 +23,7 @@ import { ProgressiveProvider, useProgressive } from '@/contexts/progressive-cont
 import { SessionRecoveryModal } from '@/components/session-recovery-modal';
 import { featureFlags } from '@/lib/feature-flags';
 import type { SessionRecovery } from '@/types/partial-submission';
+import GDPRConsent from '@/components/gdpr-consent';
 
 const GLOBAL_SETTINGS_KEY = 'global-settings';
 
@@ -51,6 +52,7 @@ function VerbalInterviewPage() {
   const [questionTimes, setQuestionTimes] = useState<number[]>([]); // Track time per question
   const [canTakeTest, setCanTakeTest] = useState(true);
   const [checkingAttempts, setCheckingAttempts] = useState(true);
+  const [gdprAccepted, setGdprAccepted] = useState<boolean>(false);
   
   // 🔒 MINIMAL IMPACT RECOVERY STATE - Only used if feature enabled
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -60,6 +62,14 @@ function VerbalInterviewPage() {
 
   // Check if user can take the test
   useEffect(() => {
+    // Read GDPR consent flag once on mount
+    try {
+      const flag = typeof window !== 'undefined' ? localStorage.getItem('gdpr_consent_v1') : null;
+      setGdprAccepted(flag === 'true');
+    } catch {
+      setGdprAccepted(false);
+    }
+
     const checkAttempts = async () => {
       try {
         const canTake = await canUserTakeTest('JDT', MAX_ATTEMPTS);
@@ -81,6 +91,15 @@ function VerbalInterviewPage() {
 
     checkAttempts();
   }, [canUserTakeTest, toast]);
+
+  const handleGdprAccept = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('gdpr_consent_v1', 'true');
+      }
+    } catch {}
+    setGdprAccepted(true);
+  };
 
   const startInterview = useCallback(async (details: PreInterviewDetails) => {
     setPreInterviewDetails(details);
@@ -372,7 +391,7 @@ function VerbalInterviewPage() {
   
   useEffect(() => {
     if (user && !preInterviewDetails) {
-        setPreInterviewDetails({ name: user.candidateName, roleCategory: user.role, language: 'English' });
+        setPreInterviewDetails({ name: (user as any).candidate_name, roleCategory: (user as any).role, language: 'English' });
     }
   }, [user, preInterviewDetails]);
 
@@ -447,9 +466,18 @@ function VerbalInterviewPage() {
 
 
   const renderContent = () => {
+    // Gate the flow with GDPR consent screen before language selection
+    if (!gdprAccepted) {
+      return (
+        <div className="w-full max-w-5xl">
+          <GDPRConsent onAccept={handleGdprAccept} />
+        </div>
+      );
+    }
+
     switch (status) {
       case 'PRE_INTERVIEW':
-        return <PreInterviewForm onFormSubmit={startInterview} defaultName={user?.candidateName} defaultRole={user?.role} />;
+        return <PreInterviewForm onFormSubmit={startInterview} defaultName={(user as any)?.candidate_name} defaultRole={(user as any)?.role} />;
       case 'INTERVIEW':
         if (isProcessing || !currentEntry) {
            return (

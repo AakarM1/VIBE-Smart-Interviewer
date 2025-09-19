@@ -24,7 +24,7 @@ import { useAuth, ProtectedRoute } from '@/contexts/auth-context';
 import CompanyManagement from '@/components/superadmin/CompanyManagement';
 import UserManagement from '@/components/superadmin/UserManagement';
 import CompetencyManagement from '@/components/superadmin/CompetencyManagement';
-import UserAssignmentManagement from '@/components/superadmin/UserAssignmentManagement';
+import BulkUserGenerator from '@/components/superadmin/BulkUserGenerator';
 
 // Define navigation items for the sidebar
 const navigationItems = [
@@ -47,10 +47,10 @@ const navigationItems = [
     description: 'Manage user accounts and permissions'
   },
   {
-    id: 'assignments',
-    label: 'User Assignments',
+    id: 'bulk-generate',
+    label: 'Bulk Generate Users',
     icon: UserCheck,
-    description: 'Assign users to admins'
+    description: 'Create multiple candidate accounts for a company'
   },
   {
     id: 'competencies',
@@ -194,7 +194,7 @@ function SuperAdminDashboard() {
           {activeSection === 'overview' && <OverviewSection />}
           {activeSection === 'companies' && <CompaniesSection />}
           {activeSection === 'users' && <UsersSection />}
-          {activeSection === 'assignments' && <AssignmentsSection />}
+          {activeSection === 'bulk-generate' && <BulkGenerateSection />}
           {activeSection === 'competencies' && <CompetenciesSection />}
           {activeSection === 'settings' && <SettingsSection />}
         </main>
@@ -312,8 +312,8 @@ function UsersSection() {
   return <UserManagement />;
 }
 
-function AssignmentsSection() {
-  return <UserAssignmentManagement />;
+function BulkGenerateSection() {
+  return <BulkUserGenerator />;
 }
 
 function CompetenciesSection() {

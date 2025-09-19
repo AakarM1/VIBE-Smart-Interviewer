@@ -1,6 +1,7 @@
 """
 User and Test Assignment API endpoints
-Handles superadmin assigning users to admins and admin assigning tests to users
+Admin assigns tests to users. Superadmin no longer assigns users to admins directly;
+instead, superadmin generates users per tenant and tenant admins manage test assignments.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -19,7 +20,8 @@ from datetime import datetime
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 
 # =====================================================
-# SUPERADMIN USER ASSIGNMENT ENDPOINTS
+# (DEPRECATED) SUPERADMIN USER ASSIGNMENT ENDPOINTS
+# Retained for backward compatibility but not recommended.
 # =====================================================
 
 @router.get("/users", response_model=List[UserAssignmentResponse])
@@ -45,7 +47,7 @@ async def bulk_assign_users_to_admin(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_superadmin)
 ):
-    """Assign multiple users to an admin (superadmin only)"""
+    """Assign multiple users to an admin (superadmin only) [Deprecated]"""
     # Verify admin exists and has admin role
     admin = db.query(User).filter(
         User.id == str(request.admin_id),

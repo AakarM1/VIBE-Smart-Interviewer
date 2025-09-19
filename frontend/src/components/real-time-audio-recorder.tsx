@@ -6,6 +6,7 @@ import { Mic, Square, Video, VideoOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { InterviewMode } from '@/types';
 import { useLanguage } from '@/contexts/language-context';
+import { useTranslation } from 'react-i18next';
 
 interface RealTimeMediaCaptureProps {
   onRecordingComplete: (mediaBlob: Blob, mediaDataUri: string) => void;
@@ -45,6 +46,7 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
   const [supportsSpeechRecognition, setSupportsSpeechRecognition] = useState(false);
   const [currentTranscription, setCurrentTranscription] = useState('');
   const { currentLanguage } = useLanguage();
+  const { t } = useTranslation();
 
   // Map BCP-47 codes to SpeechRecognition-preferred locale variants
   const getSpeechLocale = useCallback((langCode: string | undefined) => {
@@ -77,8 +79,8 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
         setHasPermission(false);
         toast({
           variant: 'destructive',
-          title: 'Unsupported Browser',
-          description: 'Your browser does not support media recording.',
+          title: t('recorder.unsupportedBrowserTitle'),
+          description: t('recorder.unsupportedBrowserMsg'),
         });
         return;
       }
@@ -98,8 +100,8 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
         setHasPermission(false);
         toast({
           variant: 'destructive',
-          title: 'Permissions Denied',
-          description: 'Please enable camera and microphone permissions in your browser settings.',
+          title: t('recorder.permissionsDeniedTitle'),
+          description: t('recorder.permissionsDeniedMsg'),
         });
       }
     };
@@ -161,8 +163,8 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
       if (event.error === 'not-allowed') {
         toast({
           variant: 'destructive',
-          title: 'Microphone Access Denied',
-          description: 'Please allow microphone access for real-time transcription.',
+          title: t('recorder.micDeniedTitle'),
+          description: t('recorder.micDeniedMsg'),
         });
       }
     };
@@ -186,8 +188,8 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
       console.error('Error starting speech recognition:', error);
       toast({
         variant: 'destructive',
-        title: 'Speech Recognition Error',
-        description: 'Could not start real-time transcription. Recording will continue without live transcription.',
+        title: t('recorder.srErrorTitle'),
+        description: t('recorder.srErrorMsg'),
       });
     }
   }, [supportsSpeechRecognition, isRecordingInternal, onRealtimeTranscription, toast, getSpeechLocale, currentLanguage]);
@@ -203,8 +205,8 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
     if (!hasPermission || !stream) {
       toast({
         variant: "destructive",
-        title: "Cannot Record",
-        description: "Permissions are required and the camera/microphone stream must be active.",
+        title: t('recorder.cannotRecordTitle'),
+        description: t('recorder.cannotRecordMsg'),
       });
       return;
     }
@@ -218,8 +220,8 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
         startSpeechRecognition();
       } else {
         toast({
-          title: 'Real-time Transcription Unavailable',
-          description: 'Your browser does not support real-time transcription. Audio will be transcribed after recording.',
+          title: t('recorder.rtaUnsupported'),
+          description: '',
         });
       }
 
@@ -239,8 +241,8 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
         } catch (error) {
           toast({
             variant: "destructive",
-            title: "Error converting recording",
-            description: "Could not process the recorded media.",
+            title: t('recorder.convertErrorTitle'),
+            description: t('recorder.convertErrorMsg'),
           });
         }
       };
@@ -250,8 +252,8 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
       console.error("Error starting recording:", err);
       toast({
         variant: "destructive",
-        title: "Recording Error",
-        description: "Could not start recording. Please check permissions and devices.",
+        title: t('recorder.recordingErrorTitle'),
+        description: t('recorder.recordingErrorMsg'),
       });
       setIsRecordingInternal(false);
       onStopRecording();
@@ -277,10 +279,10 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
           ) : (
             <div className="flex flex-col items-center justify-center text-white">
                 <Mic className="h-16 w-16" />
-                <p className="mt-4 text-lg font-semibold">Audio Recording Mode</p>
+                <p className="mt-4 text-lg font-semibold">{t('recorder.audioMode')}</p>
                 {!supportsSpeechRecognition && (
                   <p className="mt-2 text-sm text-yellow-300">
-                    Real-time transcription not supported in this browser
+                    {t('recorder.rtaUnsupported')}
                   </p>
                 )}
             </div>
@@ -288,15 +290,15 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
           {!hasPermission && (
              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white p-4">
                 <VideoOff className="h-12 w-12 mb-4" />
-                <p className="text-center font-semibold">Media access denied.</p>
-                <p className="text-center text-sm text-muted-foreground">Please enable permissions in your browser settings and refresh the page.</p>
+                <p className="text-center font-semibold">{t('recorder.mediaDeniedTitle')}</p>
+                <p className="text-center text-sm text-muted-foreground">{t('recorder.mediaDeniedMsg')}</p>
              </div>
           )}
           {isRecordingInternal && supportsSpeechRecognition && (
             <div className="absolute bottom-4 left-4 right-4">
               <div className="bg-black/70 text-white p-2 rounded-lg text-sm">
                 <span className="text-green-400 animate-pulse">● </span>
-                Live transcription active
+                {t('recorder.liveActive')}
               </div>
             </div>
           )}
@@ -304,19 +306,19 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
 
       {isRecordingInternal ? (
         <Button onClick={stopRecording} variant="destructive" size="lg" className="w-full sm:w-auto" disabled={disabled}>
-          <Square className="mr-2 h-5 w-5" /> Stop Recording
+          <Square className="mr-2 h-5 w-5" /> {t('recorder.stop')}
         </Button>
       ) : (
         <Button onClick={startRecording} variant="destructive" size="lg" className="w-full sm:w-auto" disabled={disabled || isRecordingExternally || !hasPermission}>
           {captureMode === 'video' ? <Video className="mr-2 h-5 w-5" /> : <Mic className="mr-2 h-5 w-5" />}
-           Record Answer
+           {t('recorder.record')}
         </Button>
       )}
       {isRecordingInternal && (
         <div className="text-center">
-          <p className="text-sm text-primary animate-pulse">Recording...</p>
+          <p className="text-sm text-primary animate-pulse">{t('recorder.recording')}</p>
           {supportsSpeechRecognition && (
-            <p className="text-xs text-gray-500 mt-1">Real-time transcription enabled</p>
+            <p className="text-xs text-gray-500 mt-1">{t('recorder.rtaEnabled')}</p>
           )}
         </div>
       )}

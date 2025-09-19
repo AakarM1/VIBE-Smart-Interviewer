@@ -25,7 +25,8 @@ export default function Header() {
         admin: ts('header.admin', 'Admin'),
         logout: ts('header.logout', 'Logout'),
         login: ts('header.login', 'Login'),
-        register: ts('header.register', 'Register')
+        register: ts('header.register', 'Register'),
+        superAdmin: ts('header.superadmin', 'Super Admin')
     };
 
     if (loading) return null;
@@ -45,8 +46,8 @@ export default function Header() {
                      <Image src="https://placehold.co/100x30.png" alt="Client Logo" width={100} height={30} data-ai-hint="logo" />
                      <span className="text-sm text-muted-foreground hidden sm:inline">|</span>
                      
-                     {/* Language Selector - Show if feature enabled */}
-                     {isMultilingualEnabled && <LanguageSelector />}
+                     {/* Language Selector - Header shows ALL languages, independent of admin config */}
+                     {isMultilingualEnabled && <LanguageSelector useAllLanguages />}
                      
                     {user ? (
                         <>
@@ -69,7 +70,7 @@ export default function Header() {
                                 <Link href="/superadmin" passHref>
                                     <Button variant="ghost" size="sm">
                                         <Shield className="mr-2 h-4 w-4" />
-                                        Super Admin
+                                        {texts.superAdmin}
                                     </Button>
                                 </Link>
                             )}

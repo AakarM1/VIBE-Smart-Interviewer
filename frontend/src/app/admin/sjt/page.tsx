@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileCog, PlusCircle, Trash2, ArrowLeft, Settings, Clock, ListOrdered, BrainCircuit, TrendingDown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
@@ -145,6 +146,18 @@ const SJTConfigPage = () => {
     }
   };
 
+  // Insert selected competency from dropdown into the comma-separated input, avoiding duplicates
+  const insertCompetency = (id: number, picked: string) => {
+    setScenarios(prev => prev.map(s => {
+      if (s.id !== id) return s;
+      const current = (s.assessedCompetency || '').split(',').map(x => x.trim()).filter(Boolean);
+      if (!current.map(c => c.toLowerCase()).includes(picked.toLowerCase())) {
+        current.push(picked);
+      }
+      return { ...s, assessedCompetency: current.join(', ') };
+    }));
+  };
+
   return (
     <>
       <Header />
@@ -266,20 +279,27 @@ const SJTConfigPage = () => {
                                 placeholder="e.g., Customer Focus, Problem Solving, Communication" 
                                 value={scenario.assessedCompetency} 
                                 onChange={(e) => handleScenarioChange(scenario.id, 'assessedCompetency', e.target.value)} 
-                                list="competency-options"
                                 required 
                             />
+                            {/* Proper dropdown to add competencies without manual typing */}
+                            <div className="flex items-center gap-2">
+                              <Select onValueChange={(val) => insertCompetency(scenario.id, val)}>
+                                <SelectTrigger className="w-[280px]">
+                                  <SelectValue placeholder="Add from dictionary..." />
+                                </SelectTrigger>
+                                <SelectContent className="max-h-64 overflow-y-auto">
+                                  {competencyOptions.map((opt, i) => (
+                                    <SelectItem key={`${opt.code || opt.name}-${i}`} value={opt.name}>
+                                      {opt.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <span className="text-xs text-muted-foreground">Pick to append</span>
+                            </div>
                             <p className="text-sm text-muted-foreground">
                                 Enter multiple competencies separated by commas. Each competency will be analyzed separately in the report.
                             </p>
-                            {/* Global datalist for competency suggestions */}
-                            {competencyOptions.length > 0 && index === 0 && (
-                              <datalist id="competency-options">
-                                {competencyOptions.map((opt, i) => (
-                                  <option key={`${opt.code || opt.name}-${i}`} value={opt.name} />
-                                ))}
-                              </datalist>
-                            )}
                         </div>
                         {scenarios.length > 1 && (
                         <Button variant="ghost" size="icon" onClick={() => removeScenario(scenario.id)} type="button" className="absolute top-2 right-2">

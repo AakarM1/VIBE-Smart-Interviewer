@@ -14,6 +14,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { ConversationEntry } from '@/types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useLanguage } from '@/contexts/language-context';
+import { useTranslation } from 'react-i18next';
 
 interface FlashcardProps {
   question: string;
@@ -63,6 +65,8 @@ const Flashcard: React.FC<FlashcardProps> = ({
   questionTimes,
   setQuestionTimes
 }) => {
+  const { currentLanguage } = useLanguage();
+  const { t } = useTranslation();
   // Debug: Log the per-question timer value
   console.log('🕐 Flashcard received questionTimeLimitInMinutes:', questionTimeLimitInMinutes);
   
@@ -268,23 +272,23 @@ const Flashcard: React.FC<FlashcardProps> = ({
     if (!dataUri && !mediaData?.blob) {
       toast({
         variant: "destructive",
-        title: "No media recorded",
-        description: "Please record your answer before transcribing.",
+        title: t('flashcard.toast.transcriptionError.title'),
+        description: t('flashcard.toast.transcriptionError.desc'),
       });
       return;
     }
     setIsTranscribing(true);
     try {
       const result = mediaData?.blob
-        ? await transcribeViaServer({ blob: mediaData.blob })
-        : await transcribeViaServer({ audioDataUri: dataUri });
+        ? await transcribeViaServer({ blob: mediaData.blob, languageCode: currentLanguage })
+        : await transcribeViaServer({ audioDataUri: dataUri, languageCode: currentLanguage });
       setEditableTranscription(result.transcription);
     } catch (error) {
       console.error("Transcription error:", error);
       toast({
         variant: "destructive",
-        title: "Transcription Failed",
-        description: "Could not transcribe from the recording. Please try again.",
+        title: t('flashcard.toast.transcriptionError.title'),
+        description: t('flashcard.toast.transcriptionError.desc'),
       });
     } finally {
       setIsTranscribing(false);
@@ -296,11 +300,11 @@ const Flashcard: React.FC<FlashcardProps> = ({
       if (textAnswer.trim()) {
         onAnswerSubmit(textAnswer);
       } else {
-        toast({
-            variant: "destructive",
-            title: "No answer provided",
-            description: "Please type your answer before submitting.",
-        });
+    toast({
+      variant: "destructive",
+      title: t('flashcard.toast.noAnswer.title'),
+      description: t('flashcard.toast.noAnswer.desc'),
+    });
       }
     } else {
       // For audio/video modes, use the final transcription (edited takes precedence over real-time)
@@ -310,8 +314,8 @@ const Flashcard: React.FC<FlashcardProps> = ({
       } else {
         toast({
           variant: "destructive",
-          title: "Submission Error",
-          description: "A transcribed answer is required. Please record and ensure transcription is complete.",
+          title: t('flashcard.toast.submissionError.title'),
+          description: t('flashcard.toast.submissionError.desc'),
         });
       }
     }
@@ -336,10 +340,10 @@ const Flashcard: React.FC<FlashcardProps> = ({
       return updated;
     });
     
-    toast({
-        title: "Ready to Record",
-        description: "You can now record your answer again.",
-    });
+  toast({
+    title: t('recording.start'),
+    description: t('flashcard.reRecord'),
+  });
   }
 
   const isSubmitDisabled = () => {
@@ -362,7 +366,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
       {isProcessing ? (
         <div className="flex flex-col items-center justify-center h-40 my-8 mx-auto px-8 py-6 bg-white rounded-lg shadow-md border border-gray-100 max-w-xs">
           <Loader2 className="h-10 w-10 animate-spin text-green-600" />
-          <p className="text-base font-medium text-green-600 mt-3">Saving Answer...</p>
+          <p className="text-base font-medium text-green-600 mt-3">{t('flashcard.savingAnswer')}</p>
         </div>
       ) : (
         <>
@@ -395,7 +399,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
                 <div className='h-6 w-6 rounded-full bg-red-500 flex items-center justify-center'>
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-timer"><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="12" y1="6" y2="2"/><circle cx="12" cy="14" r="8"/></svg>
                 </div>
-                TOTAL TEST TIME | {formatTime(testTimeElapsed)}
+                {t('flashcard.totalTestTime')} | {formatTime(testTimeElapsed)}
               </div>
               <Button 
                 onClick={() => {
@@ -408,7 +412,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
                 }} 
                 className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md font-medium"
               >
-                Finish Test
+                {t('flashcard.finishTest')}
               </Button>
             </div>
           </div>
@@ -423,7 +427,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
                                     <path d="M20 14a8 8 0 1 1-8-8 8 8 0 0 1 8 8Z"/>
                                     <path d="M7 15h5v5"/>
                                 </svg>
-                                Time Remaining | {formatTime(questionTimeRemaining)}
+                                {t('flashcard.timeRemaining')} | {formatTime(questionTimeRemaining)}
                             </div>
                             {/* Progress bar showing remaining time */}
                             <div className="w-40 h-3 bg-gray-300 rounded-full overflow-hidden">
@@ -441,7 +445,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
                     )}
                 </div>
                 <Button variant="outline" className="bg-orange-400 hover:bg-orange-500 text-white rounded-full border-orange-500 px-4 py-1 h-auto" onClick={() => setShowInstructions(true)}>
-                    Instruction <Info className="ml-2 h-4 w-4" />
+                    {t('flashcard.instructions.button')} <Info className="ml-2 h-4 w-4" />
                 </Button>
            </div>
           
@@ -480,19 +484,19 @@ const Flashcard: React.FC<FlashcardProps> = ({
             {isAnswered && (
                  <div className="flex items-center justify-center text-green-600 p-3 rounded-md bg-green-50 border border-green-200">
                     <CheckCircle className="mr-2 h-5 w-5" />
-                    <p className="font-medium">Answer submitted for this question.</p>
+                    <p className="font-medium">{t('flashcard.answerSubmittedMessage')}</p>
                 </div>
             )}
             {mode === 'text' ? (
                 <div className="space-y-2 flex-grow flex flex-col">
                     <div className="flex items-center text-gray-500 mb-2">
                         <Type className="h-5 w-5 mr-2" />
-                        <span>{isAnswered ? 'Your submitted answer:' : 'Type your answer below:'}</span>
+                        <span>{isAnswered ? t('flashcard.text.submittedLabel') : t('flashcard.text.typePrompt')}</span>
                     </div>
                     <Textarea 
                         value={isAnswered ? conversationHistory[currentQuestionIndex]?.answer || '' : textAnswer}
                         onChange={(e) => setTextAnswer(e.target.value)}
-                        placeholder={isAnswered ? "Your submitted answer" : "Your answer..."}
+                        placeholder={isAnswered ? t('flashcard.text.placeholderSubmitted') : t('flashcard.text.placeholderActive')}
                         rows={8}
                         className={`flex-grow ${isAnswered ? 'bg-gray-100 border-gray-300' : 'bg-gray-50'}`}
                         disabled={isAnswered}
@@ -516,19 +520,19 @@ const Flashcard: React.FC<FlashcardProps> = ({
                         {isTranscribing ? (
                            <div className="flex-grow flex items-center justify-center text-gray-500 p-4 h-full">
                                 <Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" />
-                                Transcribing...
+                                {t('flashcard.transcribing')}
                             </div>
                         ) : (
                             <>
                                 <Label htmlFor="transcription" className="flex items-center gap-2 text-gray-600 font-medium">
-                                    {isRecording ? "Live transcription:" : (mediaData ? "Final transcription (read-only):" : "Your transcribed answer will appear here:")}
+                                    {isRecording ? t('flashcard.transcription.liveLabel') : (mediaData ? t('flashcard.transcription.finalLabel') : t('flashcard.transcription.willAppear'))}
                                 </Label>
                                 <Textarea
                                     id="transcription"
                                     placeholder={
-                                        isRecording 
-                                            ? "Speak clearly to see your words appear here in real-time..." 
-                                            : (!mediaData ? "Your transcribed answer will appear here after recording." : "Transcription complete - cannot be edited.")
+                    isRecording 
+                      ? t('flashcard.transcription.placeholderRecording')
+                      : (!mediaData ? t('flashcard.transcription.placeholderAfter') : t('flashcard.transcription.placeholderLocked'))
                                     }
                                     value={isRecording ? realtimeTranscription : editableTranscription}
                                     onChange={() => {
@@ -548,7 +552,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
                                     <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded-md border border-blue-200">
                                         <span className="flex items-center">
                                             <span className="animate-pulse text-red-500 mr-2">●</span>
-                                            Recording in progress - speak clearly for accurate transcription
+                                            {t('flashcard.transcription.inProgressNotice')}
                                         </span>
                                     </div>
                                 )}
@@ -557,13 +561,13 @@ const Flashcard: React.FC<FlashcardProps> = ({
                                         <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded-md border border-gray-200">
                                             <span className="flex items-center">
                                                 <span className="text-green-500 mr-2">✓</span>
-                                                Recording complete - transcription is final and cannot be edited
+                                                {t('flashcard.transcription.completeNotice')}
                                             </span>
                                         </div>
                                         <div className="flex gap-4">
                                             <Button onClick={handleRerecord} variant="outline" size="sm">
                                                 <RefreshCcw className="mr-2 h-4 w-4" />
-                                                Re-record
+                                                {t('flashcard.reRecord')}
                                             </Button>
                                         </div>
                                     </div>
@@ -581,7 +585,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
               disabled={isSubmitDisabled()}
               className="bg-green-600 hover:bg-green-700 text-white rounded-full px-8 py-2 h-auto text-base"
             >
-             {isAnswered ? <><CheckCircle className="mr-2 h-5 w-5" /> Submitted</> : <><Send className="mr-2 h-5 w-5" /> Submit Answer</>}
+             {isAnswered ? <><CheckCircle className="mr-2 h-5 w-5" /> {t('flashcard.submitted')}</> : <><Send className="mr-2 h-5 w-5" /> {t('flashcard.submitAnswer')}</>}
             </Button>
           </div>
         </>
@@ -593,7 +597,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-primary flex items-center gap-2">
               <Info className="h-6 w-6" />
-              Test Instructions
+              {t('flashcard.instructions.title')}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">

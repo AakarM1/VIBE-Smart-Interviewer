@@ -41,6 +41,26 @@ export interface Tenant {
   updated_at: string;
 }
 
+// Bulk user generation (superadmin)
+export interface GeneratedCredential {
+  user_id: string;
+  email: string;
+  password: string;
+}
+export interface BulkUserGenerateRequest {
+  count: number;
+  email_prefix: string;
+  email_domain: string;
+  name_prefix?: string | null;
+  start_from?: number;
+  use_fixed_password?: boolean;
+  fixed_password?: string | null;
+}
+export interface BulkUserGenerateResponse {
+  created: number;
+  credentials: GeneratedCredential[];
+}
+
 export interface AuthTokens {
   access_token: string;
   refresh_token: string;
@@ -318,6 +338,17 @@ class FastAPIService {
   async deleteTenant(tenantId: string): Promise<ApiResponse<{ message: string }>> {
     return this.request<{ message: string }>(`/api/v1/tenants/${tenantId}`, {
       method: 'DELETE',
+    });
+  }
+
+  // Bulk user generation for a tenant (superadmin only)
+  async generateTenantUsers(
+    tenantId: string,
+    payload: BulkUserGenerateRequest
+  ): Promise<ApiResponse<BulkUserGenerateResponse>> {
+    return this.request<BulkUserGenerateResponse>(`/api/v1/tenants/${tenantId}/users/generate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 

@@ -674,6 +674,28 @@ class CompetencyResponse(CompetencyBase):
     class Config:
         from_attributes = True
 
+# =====================================================
+# BULK USER GENERATION (SUPERADMIN)
+# =====================================================
+
+class GeneratedCredential(BaseModel):
+    user_id: uuid.UUID
+    email: EmailStr
+    password: str
+
+class BulkUserGenerateRequest(BaseModel):
+    count: int = Field(..., gt=0, le=1000)
+    email_prefix: str = Field(..., description="Prefix for email usernames e.g., CompanyA")
+    email_domain: str = Field("gmail.com", description="Email domain e.g., gmail.com")
+    name_prefix: Optional[str] = Field(None, description="Prefix for candidate_name, defaults to 'Candidate'")
+    start_from: int = Field(1, ge=1, description="Starting index for numbering")
+    use_fixed_password: bool = Field(False, description="If true, use fixed_password for all accounts")
+    fixed_password: Optional[str] = Field(None, description="Password to use when use_fixed_password=true")
+
+class BulkUserGenerateResponse(BaseModel):
+    created: int
+    credentials: List[GeneratedCredential]
+
 def create_tables(engine):
     """Create all database tables"""
     Base.metadata.create_all(bind=engine)

@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'AI key not configured on server' }, { status: 500 });
     }
 
-    let audioDataUri: string | null = null;
+  let audioDataUri: string | null = null;
+  let languageCode: string | undefined;
 
     // Try multipart/form-data first (preferred for large payloads)
     const contentType = request.headers.get('content-type') || '';
@@ -33,12 +34,15 @@ export async function POST(request: NextRequest) {
       const data = await request.json().catch(() => null);
       if (data && typeof data.audioDataUri === 'string' && data.audioDataUri.startsWith('data:')) {
         audioDataUri = data.audioDataUri;
+        if (data.languageCode && typeof data.languageCode === 'string') {
+          languageCode = data.languageCode;
+        }
       } else {
         return NextResponse.json({ error: 'Invalid input: expected audioDataUri data URI or multipart file' }, { status: 400 });
       }
     }
 
-  const result = await transcribeAudio({ audioDataUri: audioDataUri as string });
+  const result = await transcribeAudio({ audioDataUri: audioDataUri as string, languageCode });
     return NextResponse.json(result);
   } catch (error: any) {
     console.error('❌ Error transcribing audio:', error);

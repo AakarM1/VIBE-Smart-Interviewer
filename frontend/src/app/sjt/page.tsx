@@ -12,6 +12,7 @@ import { Loader2, PartyPopper } from 'lucide-react';
 import Header from '@/components/header';
 import { useToast } from '@/hooks/use-toast';
 import { SJTInstructions } from '@/components/sjt/sjt-instructions';
+import GDPRConsent from '@/components/gdpr-consent';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ import { dataUriToBlob, uploadMediaToStorage } from '@/lib/media-storage';
 import { ProgressiveUploadIndicator } from '@/components/progressive-upload-indicator';
 import { featureFlags } from '@/lib/feature-flags';
 import type { SessionRecovery, ProgressInfo, SaveResult } from '@/types/partial-submission';
+import { useLanguage } from '@/contexts/language-context';
 
 
 interface Scenario {
@@ -58,6 +60,7 @@ const fallbackSjtScenarios: Scenario[] = [
 
 function SJTInterviewPage() {
   const { user, saveSubmission, canUserTakeTest, getSubmissions } = useAuth();
+  const { currentLanguage } = useLanguage();
   const { toast } = useToast();
   const router = useRouter();
   
@@ -81,11 +84,21 @@ function SJTInterviewPage() {
   const [checkingAttempts, setCheckingAttempts] = useState(true);
   const [followUpMap, setFollowUpMap] = useState<{[key: number]: number}>({}); // Track follow-up count per question
   const [maxFollowUps, setMaxFollowUps] = useState(1); // Use configured follow-up count (default 1)
+  const [gdprAccepted, setGdprAccepted] = useState<boolean>(false);
   
   const MAX_ATTEMPTS = 1;
 
   // Check if user can take the test
   useEffect(() => {
+    // Check GDPR consent flag early
+    try {
+      const flag = typeof window !== 'undefined' ? localStorage.getItem('gdpr_consent_v1') : null;
+      setGdprAccepted(flag === 'true');
+    } catch (e) {
+      // default false on any error
+      setGdprAccepted(false);
+    }
+
     const checkAttempts = async () => {
       try {
         const canTake = await canUserTakeTest('SJT', MAX_ATTEMPTS);
@@ -107,6 +120,15 @@ function SJTInterviewPage() {
 
     checkAttempts();
   }, [canUserTakeTest, toast]);
+
+  const handleGdprAccept = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('gdpr_consent_v1', 'true');
+      }
+    } catch {}
+    setGdprAccepted(true);
+  };
 
   const startInterview = useCallback(async (details: PreInterviewDetails) => {
     setStatus('INTERVIEW');
@@ -199,8 +221,8 @@ function SJTInterviewPage() {
       });
     }
     
-    // Translate scenarios if language is not English
-    if (details.language && details.language.toLowerCase() !== 'english') {
+  // Translate scenarios if language is not English
+  if (details.language && details.language.toLowerCase() !== 'english') {
         toast({ title: `Translating scenarios to ${details.language}...` });
         try {
           const translatedScenarios = await Promise.all(scenariosToUse.map(async (s) => {
@@ -289,7 +311,9 @@ function SJTInterviewPage() {
         situation: situation,
         bestResponseRationale: s.bestResponseRationale || "Demonstrate professional competency and sound judgment.",
         worstResponseRationale: s.worstResponseRationale || "Show poor judgment or unprofessional behavior.",
-        assessedCompetency: s.assessedCompetency || "General Competency"
+        assessedCompetency: s.assessedCompetency || "General Competency",
+        // Tag language code for each entry at start
+        languageCode: (details.language?.toLowerCase().startsWith('eng') ? 'en' : currentLanguage) || 'en'
       };
     });
     
@@ -373,12 +397,13 @@ function SJTInterviewPage() {
         };
 
         // Save submission immediately with basic analysis, normalized in saveSubmission
-        const created = await saveSubmission({
+    const created = await saveSubmission({
             candidateName: preInterviewDetails!.name,
             candidateId: (user as any)?.candidate_id || (user as any)?.id,
             testType: 'SJT',
-            candidateLanguage: preInterviewDetails?.language || 'English',
-            uiLanguage: preInterviewDetails?.language || 'English',
+      // Persist ISO code if possible for analysis
+      candidateLanguage: currentLanguage || 'en',
+      uiLanguage: currentLanguage || 'en',
             history: conversationHistory,
             report: basicResult,
         });
@@ -449,6 +474,9 @@ function SJTInterviewPage() {
     updatedHistory[currentQuestionIndex] = {
       ...updatedHistory[currentQuestionIndex],
       answer,
+      // Preserve original answer and language metadata for multilingual analysis
+      answerNative: answer,
+      languageCode: currentLanguage || updatedHistory[currentQuestionIndex]?.languageCode || 'en',
       videoDataUri,
     };
     setConversationHistory(updatedHistory);
@@ -834,6 +862,15 @@ function SJTInterviewPage() {
   }, [progressive.isProgressiveUploadEnabled, progressive.uploadProgress]);
   
   const renderContent = () => {
+    // If GDPR not accepted yet, gate everything behind consent
+    if (!gdprAccepted) {
+      return (
+        <div className="w-full max-w-5xl">
+          <GDPRConsent onAccept={handleGdprAccept} />
+        </div>
+      );
+    }
+
     switch (status) {
       case 'PRE_INTERVIEW':
         return <SJTInstructions onProceed={startInterview} />;

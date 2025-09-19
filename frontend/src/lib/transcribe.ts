@@ -1,6 +1,6 @@
 export type TranscribeRequest =
-  | { audioDataUri: string; blob?: undefined }
-  | { audioDataUri?: undefined; blob: Blob };
+  | { audioDataUri: string; blob?: undefined; languageCode?: string }
+  | { audioDataUri?: undefined; blob: Blob; languageCode?: string };
 
 export type TranscribeResponse = {
   transcription: string;
@@ -19,7 +19,7 @@ export async function transcribeViaServer(input: TranscribeRequest): Promise<Tra
     res = await fetch('/api/ai/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ audioDataUri: input.audioDataUri, languageCode: input.languageCode }),
     });
   } else {
     throw new Error('Invalid transcription input');
