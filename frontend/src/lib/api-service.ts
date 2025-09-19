@@ -328,6 +328,10 @@ class FastAPIService {
     });
   }
 
+  async getTenant(tenantId: string): Promise<ApiResponse<Tenant>> {
+    return this.request<Tenant>(`/api/v1/tenants/${tenantId}`);
+  }
+
   async updateTenant(tenantId: string, tenantData: Partial<Tenant>): Promise<ApiResponse<Tenant>> {
     return this.request<Tenant>(`/api/v1/tenants/${tenantId}`, {
       method: 'PUT',
@@ -412,11 +416,40 @@ class FastAPIService {
     return this.request<any>(`/api/v1/configurations/type/${type}`);
   }
 
+  async getConfigurationForTenant(type: string, tenantId: string): Promise<ApiResponse<any>> {
+    // Superadmin can fetch config for a specific tenant by passing tenant_id
+    const qs = new URLSearchParams({ tenant_id: tenantId }).toString();
+    return this.request<any>(`/api/v1/configurations/type/${type}?${qs}`);
+  }
+
   async saveConfiguration(type: string, configData: any): Promise<ApiResponse<any>> {
     // Backend exposes dedicated endpoints /configurations/{type} for POST (sjt, jdt, global)
     return this.request<any>(`/api/v1/configurations/${type}`, {
       method: 'POST',
       body: JSON.stringify(configData),
+    });
+  }
+
+  // Tenant users
+  async listTenantUsers(tenantId: string, params?: { skip?: number; limit?: number; role?: string }): Promise<ApiResponse<User[]>> {
+    const query = params ? '?' + new URLSearchParams(
+      Object.entries(params).reduce((acc, [k, v]) => { if (v !== undefined && v !== null) acc[k] = String(v); return acc; }, {} as Record<string,string>)
+    ).toString() : '';
+    return this.request<User[]>(`/api/v1/tenants/${tenantId}/users${query}`);
+  }
+
+  // Assignments
+  async bulkAssignTests(payload: {
+    user_ids: string[];
+    test_types: string[];
+    due_date?: string;
+    max_attempts?: number;
+    notes?: string;
+    sjt_scenario_ids?: (string|number)[];
+  }): Promise<ApiResponse<any[]>> {
+    return this.request<any[]>(`/api/v1/assignments/tests/bulk`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 

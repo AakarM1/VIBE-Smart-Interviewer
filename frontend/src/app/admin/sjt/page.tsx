@@ -20,11 +20,17 @@ const getUniqueId = () => Date.now() + Math.random();
 
 interface Scenario {
   id: number;
+  name?: string; // Optional display name/title for scenario
   situation: string;
   question: string;
   bestResponseRationale: string;
   worstResponseRationale: string;
   assessedCompetency: string;
+  // Optional per-scenario overrides
+  prepTimeSeconds?: number;
+  answerTimeSeconds?: number;
+  reRecordLimit?: number;
+  ttsVoice?: string;
 }
 
 interface TestSettings {
@@ -34,6 +40,13 @@ interface TestSettings {
   aiGeneratedQuestions: number; // DEPRECATED: For backward compatibility only
   followUpCount: number; // Number of AI-generated follow-up questions (NEW)
   followUpPenalty: number; // Percentage penalty for follow-up questions (0-100)
+  // NEW: Advanced behavior controls
+  prepTimeSeconds?: number;
+  autoStartRecording?: boolean;
+  answerTimeSeconds?: number;
+  reRecordLimit?: number;
+  ttsEnabled?: boolean;
+  ttsVoice?: string;
 }
 
 
@@ -47,7 +60,13 @@ const SJTConfigPage = () => {
     questionTimeLimit: 120, 
     aiGeneratedQuestions: 0, // Keep for backward compatibility
     followUpCount: 1, // NEW: Default to 1 follow-up question
-    followUpPenalty: 0 
+    followUpPenalty: 0,
+    prepTimeSeconds: 10,
+    autoStartRecording: true,
+    answerTimeSeconds: 90,
+    reRecordLimit: 1,
+    ttsEnabled: true,
+    ttsVoice: ''
   });
 
 
@@ -59,9 +78,18 @@ const SJTConfigPage = () => {
         if (savedConfig) {
           const { scenarios: savedScenarios, settings: savedSettings } = savedConfig;
           if (savedScenarios && savedScenarios.length > 0) {
-            setScenarios(savedScenarios);
+            // Normalize scenarios to include optional name
+            setScenarios(savedScenarios.map((s: any) => ({
+              id: s.id,
+              name: s.name || '',
+              situation: s.situation || '',
+              question: s.question || '',
+              bestResponseRationale: s.bestResponseRationale || '',
+              worstResponseRationale: s.worstResponseRationale || '',
+              assessedCompetency: s.assessedCompetency || ''
+            })));
           } else {
-             setScenarios([{ id: getUniqueId(), situation: '', question: '', bestResponseRationale: '', worstResponseRationale: '', assessedCompetency: '' }]);
+             setScenarios([{ id: getUniqueId(), name: '', situation: '', question: '', bestResponseRationale: '', worstResponseRationale: '', assessedCompetency: '' }]);
           }
           if (savedSettings) {
              setSettings({
@@ -70,16 +98,22 @@ const SJTConfigPage = () => {
                 questionTimeLimit: savedSettings.questionTimeLimit || 120,
                 aiGeneratedQuestions: savedSettings.aiGeneratedQuestions || 0, // Keep for backward compatibility
                 followUpCount: savedSettings.followUpCount ?? savedSettings.aiGeneratedQuestions ?? 1, // Migration logic
-                followUpPenalty: savedSettings.followUpPenalty || 0,
+           followUpPenalty: savedSettings.followUpPenalty || 0,
+           prepTimeSeconds: typeof savedSettings.prepTimeSeconds === 'number' ? savedSettings.prepTimeSeconds : 10,
+           autoStartRecording: typeof savedSettings.autoStartRecording === 'boolean' ? savedSettings.autoStartRecording : true,
+           answerTimeSeconds: typeof savedSettings.answerTimeSeconds === 'number' ? savedSettings.answerTimeSeconds : 90,
+                reRecordLimit: typeof savedSettings.reRecordLimit === 'number' ? savedSettings.reRecordLimit : 1,
+           ttsEnabled: typeof savedSettings.ttsEnabled === 'boolean' ? savedSettings.ttsEnabled : true,
+           ttsVoice: typeof savedSettings.ttsVoice === 'string' ? savedSettings.ttsVoice : ''
              });
           }
         } else {
-          setScenarios([{ id: getUniqueId(), situation: '', question: '', bestResponseRationale: '', worstResponseRationale: '', assessedCompetency: '' }]);
+          setScenarios([{ id: getUniqueId(), name: '', situation: '', question: '', bestResponseRationale: '', worstResponseRationale: '', assessedCompetency: '' }]);
         }
         console.log('✅ SJT configuration loaded from database');
       } catch (error) {
         console.error('❌ Error loading SJT configuration from database:', error);
-        setScenarios([{ id: getUniqueId(), situation: '', question: '', bestResponseRationale: '', worstResponseRationale: '', assessedCompetency: '' }]);
+  setScenarios([{ id: getUniqueId(), name: '', situation: '', question: '', bestResponseRationale: '', worstResponseRationale: '', assessedCompetency: '' }]);
       }
     };
 
@@ -106,7 +140,7 @@ const SJTConfigPage = () => {
   };
 
   const addScenario = () => {
-    setScenarios(prev => [...prev, { id: getUniqueId(), situation: '', question: '', bestResponseRationale: '', worstResponseRationale: '', assessedCompetency: '' }]);
+    setScenarios(prev => [...prev, { id: getUniqueId(), name: '', situation: '', question: '', bestResponseRationale: '', worstResponseRationale: '', assessedCompetency: '' }]);
   };
 
   const removeScenario = (id: number) => {
@@ -240,6 +274,74 @@ const SJTConfigPage = () => {
                             />
                             <p className="text-xs text-muted-foreground">Percentage penalty applied when follow-up questions are generated.</p>
                         </div>
+            <div className="space-y-2">
+              <Label htmlFor="prep-time" className="flex items-center gap-2"><Clock /> Prep Time (seconds)</Label>
+              <Input
+                id="prep-time"
+                type="number"
+                min="0"
+                value={settings.prepTimeSeconds ?? 0}
+                onChange={(e) => setSettings(s => ({ ...s, prepTimeSeconds: Math.max(0, parseInt(e.target.value, 10) || 0) }))}
+                placeholder="e.g., 10"
+              />
+              <p className="text-xs text-muted-foreground">Time to prepare before recording starts automatically.</p>
+            </div>
+            <div className="space-y-2 flex items-center gap-2">
+              <input
+                id="auto-start"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={!!settings.autoStartRecording}
+                onChange={(e) => setSettings(s => ({ ...s, autoStartRecording: e.target.checked }))}
+              />
+              <Label htmlFor="auto-start">Auto-start Recording after Prep</Label>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="answer-time" className="flex items-center gap-2"><Clock /> Answer Time (seconds)</Label>
+              <Input
+                id="answer-time"
+                type="number"
+                min="0"
+                value={settings.answerTimeSeconds ?? 0}
+                onChange={(e) => setSettings(s => ({ ...s, answerTimeSeconds: Math.max(0, parseInt(e.target.value, 10) || 0) }))}
+                placeholder="e.g., 90"
+              />
+              <p className="text-xs text-muted-foreground">If set, recording will auto-stop and submit when time is up.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rerecord-limit">Re-record Limit</Label>
+              <Input
+                id="rerecord-limit"
+                type="number"
+                min="0"
+                max="5"
+                value={settings.reRecordLimit ?? 0}
+                onChange={(e) => setSettings(s => ({ ...s, reRecordLimit: Math.min(5, Math.max(0, parseInt(e.target.value, 10) || 0)) }))}
+                placeholder="e.g., 1"
+              />
+              <p className="text-xs text-muted-foreground">Number of times a candidate can re-record an answer (0 = unlimited).</p>
+            </div>
+            <div className="space-y-2 flex items-center gap-2">
+              <input
+                id="tts-enabled"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={!!settings.ttsEnabled}
+                onChange={(e) => setSettings(s => ({ ...s, ttsEnabled: e.target.checked }))}
+              />
+              <Label htmlFor="tts-enabled">Enable Text-to-Speech (reads question)</Label>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tts-voice">TTS Voice Hint</Label>
+              <Input
+                id="tts-voice"
+                type="text"
+                value={settings.ttsVoice || ''}
+                onChange={(e) => setSettings(s => ({ ...s, ttsVoice: e.target.value }))}
+                placeholder="e.g., Google US English"
+              />
+              <p className="text-xs text-muted-foreground">Optional: Voice name contains this text (browser voices vary).</p>
+            </div>
                     </CardContent>
                 </Card>
 
@@ -251,9 +353,13 @@ const SJTConfigPage = () => {
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                    {scenarios.map((scenario, index) => (
+          {scenarios.map((scenario, index) => (
                     <div key={scenario.id} className="p-4 border rounded-md space-y-4 relative bg-secondary/30">
                         <h3 className="font-semibold text-primary">Scenario {index + 1}</h3>
+            <div className="space-y-2">
+              <Label htmlFor={`name-${scenario.id}`}>Scenario Name (optional)</Label>
+              <Input id={`name-${scenario.id}`} placeholder="e.g., Handling a Difficult Customer" value={scenario.name || ''} onChange={(e) => handleScenarioChange(scenario.id, 'name' as any, e.target.value)} />
+            </div>
                         <div className="space-y-2">
                             <Label htmlFor={`situation-${scenario.id}`}>Situation Description</Label>
                             <Textarea id={`situation-${scenario.id}`} placeholder="e.g., A customer is very unhappy with a recent purchase..." value={scenario.situation} onChange={(e) => handleScenarioChange(scenario.id, 'situation', e.target.value)} required rows={3} />
@@ -300,6 +406,53 @@ const SJTConfigPage = () => {
                             <p className="text-sm text-muted-foreground">
                                 Enter multiple competencies separated by commas. Each competency will be analyzed separately in the report.
                             </p>
+                        </div>
+                        {/* Optional per-scenario overrides */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                          <div className="space-y-2">
+                            <Label htmlFor={`ov-prep-${scenario.id}`}>Override: Prep Time (sec)</Label>
+                            <Input
+                              id={`ov-prep-${scenario.id}`}
+                              type="number"
+                              min="0"
+                              value={scenario.prepTimeSeconds ?? ''}
+                              onChange={(e) => handleScenarioChange(scenario.id, 'prepTimeSeconds' as any, e.target.value ? String(Math.max(0, parseInt(e.target.value, 10) || 0)) : '')}
+                              placeholder="Leave blank to use default"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`ov-ans-${scenario.id}`}>Override: Answer Time (sec)</Label>
+                            <Input
+                              id={`ov-ans-${scenario.id}`}
+                              type="number"
+                              min="0"
+                              value={scenario.answerTimeSeconds ?? ''}
+                              onChange={(e) => handleScenarioChange(scenario.id, 'answerTimeSeconds' as any, e.target.value ? String(Math.max(0, parseInt(e.target.value, 10) || 0)) : '')}
+                              placeholder="Leave blank to use default"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`ov-rr-${scenario.id}`}>Override: Re-record Limit</Label>
+                            <Input
+                              id={`ov-rr-${scenario.id}`}
+                              type="number"
+                              min="0"
+                              max="5"
+                              value={scenario.reRecordLimit ?? ''}
+                              onChange={(e) => handleScenarioChange(scenario.id, 'reRecordLimit' as any, e.target.value ? String(Math.min(5, Math.max(0, parseInt(e.target.value, 10) || 0))) : '')}
+                              placeholder="Leave blank to use default"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor={`ov-voice-${scenario.id}`}>Override: TTS Voice Hint</Label>
+                            <Input
+                              id={`ov-voice-${scenario.id}`}
+                              type="text"
+                              value={scenario.ttsVoice ?? ''}
+                              onChange={(e) => handleScenarioChange(scenario.id, 'ttsVoice' as any, e.target.value)}
+                              placeholder="e.g., Google US English"
+                            />
+                          </div>
                         </div>
                         {scenarios.length > 1 && (
                         <Button variant="ghost" size="icon" onClick={() => removeScenario(scenario.id)} type="button" className="absolute top-2 right-2">

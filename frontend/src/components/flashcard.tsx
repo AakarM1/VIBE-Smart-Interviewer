@@ -36,6 +36,13 @@ interface FlashcardProps {
   conversationHistory: ConversationEntry[];
   questionTimes: number[]; // Array to track time spent per question
   setQuestionTimes: (times: number[]) => void;
+  // NEW: SJT-specific enhancements
+  prepTimeSeconds?: number; // Countdown before recording starts automatically
+  autoStartRecording?: boolean; // If true, start recording automatically after prep
+  answerTimeSeconds?: number; // If set, auto-stop recording and auto-submit when reached
+  reRecordLimit?: number; // Max number of re-records allowed per question
+  ttsEnabled?: boolean; // If true, speak question via Web Speech API
+  ttsVoice?: string; // Optional voice name hint
 }
 
 
@@ -63,7 +70,13 @@ const Flashcard: React.FC<FlashcardProps> = ({
   setCurrentQuestionIndex,
   conversationHistory,
   questionTimes,
-  setQuestionTimes
+  setQuestionTimes,
+  prepTimeSeconds = 0,
+  autoStartRecording = false,
+  answerTimeSeconds = 0,
+  reRecordLimit = 0,
+  ttsEnabled = false,
+  ttsVoice
 }) => {
   const { currentLanguage } = useLanguage();
   const { t } = useTranslation();
@@ -85,9 +98,17 @@ const Flashcard: React.FC<FlashcardProps> = ({
   
   const [testTimeElapsed, setTestTimeElapsed] = useState(0); // Track elapsed time in seconds
   const [questionTimeRemaining, setQuestionTimeRemaining] = useState(0); // Countdown timer for current question
+  const [prepRemaining, setPrepRemaining] = useState(0);
+  const [autoStartKey, setAutoStartKey] = useState<number>(0); // key to trigger recorder start
+  const [autoStopKey, setAutoStopKey] = useState<number>(0); // key to trigger recorder stop
+  const [rerecordCounts, setRerecordCounts] = useState<{[index: number]: number}>({});
+  const [answerElapsed, setAnswerElapsed] = useState(0);
 
   const testTimerRef = useRef<NodeJS.Timeout>();
   const questionCountdownRef = useRef<NodeJS.Timeout>(); // Countdown timer ref
+  const prepCountdownRef = useRef<NodeJS.Timeout>();
+  const answerTimerRef = useRef<NodeJS.Timeout>();
+  const ttsUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
 
   // Keep ref in sync with props - REMOVED since we don't use question times anymore
@@ -137,10 +158,24 @@ const Flashcard: React.FC<FlashcardProps> = ({
         clearInterval(questionCountdownRef.current);
         questionCountdownRef.current = undefined;
       }
+      if (answerTimerRef.current) {
+        clearInterval(answerTimerRef.current);
+        answerTimerRef.current = undefined;
+      }
+      if (prepCountdownRef.current) {
+        clearInterval(prepCountdownRef.current);
+        prepCountdownRef.current = undefined;
+      }
     } else {
       // Clear existing countdown timer
       if (questionCountdownRef.current) {
         clearInterval(questionCountdownRef.current);
+      }
+      if (answerTimerRef.current) {
+        clearInterval(answerTimerRef.current);
+      }
+      if (prepCountdownRef.current) {
+        clearInterval(prepCountdownRef.current);
       }
 
       // Start countdown timer if per-question limit is configured
@@ -176,6 +211,102 @@ const Flashcard: React.FC<FlashcardProps> = ({
           });
         }, 1000);
       }
+
+      // Initialize prep timer and TTS for SJT if enabled
+      setAnswerElapsed(0);
+      if (ttsEnabled) {
+        const speakBrowser = () => {
+          try {
+            const synth = window.speechSynthesis;
+            if (synth) {
+              const utter = new SpeechSynthesisUtterance(question.replace(/\n\n/g, '. '));
+              if (ttsVoice) {
+                const voices = synth.getVoices();
+                const match = voices.find(v => v.name.toLowerCase().includes(ttsVoice.toLowerCase()));
+                if (match) utter.voice = match;
+              }
+              utter.rate = 1.0;
+              ttsUtteranceRef.current = utter;
+              synth.cancel();
+              synth.speak(utter);
+            }
+          } catch (e) {
+            console.warn('Browser TTS failed or unsupported:', e);
+          }
+        };
+
+        // Prefer server TTS for consistency (if configured)
+        (async () => {
+          try {
+            const langHint = (conversationHistory[currentQuestionIndex] as any)?.languageCode || 'en-US';
+            const res = await fetch('/api/tts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: question.replace(/\n\n/g, '. '),
+                languageCode: langHint,
+                voiceName: ttsVoice,
+                audioEncoding: 'MP3',
+                speakingRate: 1.0,
+              })
+            });
+            if (!res.ok) {
+              // If not implemented (501) or other error, fallback to browser
+              speakBrowser();
+              return;
+            }
+            const data = await res.json();
+            if (!data?.audioContent) {
+              speakBrowser();
+              return;
+            }
+            const audio = new Audio(data.audioContent);
+            audio.play().catch(() => speakBrowser());
+          } catch (err) {
+            console.warn('Server TTS failed, falling back to browser TTS:', err);
+            speakBrowser();
+          }
+        })();
+      }
+
+      if (autoStartRecording && prepTimeSeconds > 0 && mode !== 'text') {
+        setPrepRemaining(prepTimeSeconds);
+        prepCountdownRef.current = setInterval(() => {
+          setPrepRemaining(prev => {
+            if (prev <= 1) {
+              // trigger start recording
+              setAutoStartKey(Date.now());
+              clearInterval(prepCountdownRef.current!);
+              prepCountdownRef.current = undefined;
+              // start answer elapsed timer and auto-stop if needed
+              if (answerTimeSeconds > 0) {
+                setAnswerElapsed(0);
+                answerTimerRef.current = setInterval(() => {
+                  setAnswerElapsed(prevAns => {
+                    const next = prevAns + 1;
+                    if (next >= answerTimeSeconds) {
+                      // stop recording and auto-submit
+                      setAutoStopKey(Date.now());
+                      clearInterval(answerTimerRef.current!);
+                      answerTimerRef.current = undefined;
+                      setTimeout(() => {
+                        const currentAnswer = editableTranscription || realtimeTranscription || textAnswer || '';
+                        const dataUri = mediaData?.dataUri;
+                        onAnswerSubmit(currentAnswer, dataUri);
+                      }, 150);
+                    }
+                    return next;
+                  });
+                }, 1000);
+              }
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        setPrepRemaining(0);
+      }
     }
 
     // Reset media state when question changes
@@ -187,6 +318,12 @@ const Flashcard: React.FC<FlashcardProps> = ({
     return () => {
       if (questionCountdownRef.current) {
         clearInterval(questionCountdownRef.current);
+      }
+      if (prepCountdownRef.current) {
+        clearInterval(prepCountdownRef.current);
+      }
+      if (answerTimerRef.current) {
+        clearInterval(answerTimerRef.current);
       }
     };
   }, [currentQuestionIndex, isAnswered, testTimerValue]); // Simplified dependencies
@@ -322,6 +459,19 @@ const Flashcard: React.FC<FlashcardProps> = ({
   };
   
   const handleRerecord = () => {
+    // Enforce re-record limit if configured
+    if (reRecordLimit && reRecordLimit > 0) {
+      const used = rerecordCounts[currentQuestionIndex] || 0;
+      if (used >= reRecordLimit) {
+        toast({
+          variant: 'destructive',
+          title: t('flashcard.rerecordLimit') || 'Re-record limit reached',
+          description: `You can only re-record ${reRecordLimit} time(s) for this question.`
+        });
+        return;
+      }
+      setRerecordCounts(prev => ({ ...prev, [currentQuestionIndex]: used + 1 }));
+    }
     setMediaData(null);
     setEditableTranscription('');
     setRealtimeTranscription('');
@@ -514,6 +664,9 @@ const Flashcard: React.FC<FlashcardProps> = ({
                             onStopRecording={() => setIsRecording(false)}
                             disabled={isTranscribing || !!mediaData || isAnswered}
                             captureMode={captureMode}
+              // Programmatic control
+              startTrigger={autoStartKey}
+              stopTrigger={autoStopKey}
                         />
                     </div>
                     <div className="space-y-4 h-full flex flex-col w-full">
@@ -569,6 +722,11 @@ const Flashcard: React.FC<FlashcardProps> = ({
                                                 <RefreshCcw className="mr-2 h-4 w-4" />
                                                 {t('flashcard.reRecord')}
                                             </Button>
+                      {reRecordLimit > 0 && (
+                        <span className="text-xs text-muted-foreground self-center">
+                        {`Re-records: ${(rerecordCounts[currentQuestionIndex]||0)} / ${reRecordLimit}`}
+                        </span>
+                      )}
                                         </div>
                                     </div>
                                 )}
@@ -601,6 +759,20 @@ const Flashcard: React.FC<FlashcardProps> = ({
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {prepTimeSeconds > 0 && autoStartRecording && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                <p className="text-sm text-purple-800">
+                  Prep time enabled: You will have {prepTimeSeconds} seconds to prepare before recording starts automatically.
+                </p>
+              </div>
+            )}
+            {ttsEnabled && (
+              <div className="bg-sky-50 border border-sky-200 rounded-lg p-3">
+                <p className="text-sm text-sky-800">
+                  Text-to-speech is enabled. Click the speaker in your browser bar if you need to allow audio.
+                </p>
+              </div>
+            )}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <h3 className="font-semibold text-blue-800 mb-2">Test Guidelines:</h3>
               <ul className="space-y-2 text-sm text-blue-700">

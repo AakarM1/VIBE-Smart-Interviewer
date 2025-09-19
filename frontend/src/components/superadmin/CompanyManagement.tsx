@@ -29,6 +29,8 @@ export default function CompanyManagement({ onBack }: CompanyManagementProps) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterActive, setFilterActive] = useState<boolean | 'all'>('all');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState<Tenant | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -58,6 +60,34 @@ export default function CompanyManagement({ onBack }: CompanyManagementProps) {
     const matchesFilter = filterActive === 'all' || company.is_active === filterActive;
     return matchesSearch && matchesFilter;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredCompanies.length / pageSize));
+  const pageItems = filteredCompanies.slice((page - 1) * pageSize, page * pageSize);
+
+  const exportCSV = () => {
+    const headers = ['ID','Name','Active','MaxAttempts','AllowedTypes','CreatedAt','UpdatedAt'];
+    const rows = filteredCompanies.map(c => [
+      c.id,
+      c.name,
+      c.is_active ? 'Yes' : 'No',
+      c.max_test_attempts,
+      (c.allowed_test_types || []).join('|'),
+      c.created_at ? new Date(c.created_at).toISOString() : '',
+      c.updated_at ? new Date(c.updated_at).toISOString() : ''
+    ]);
+    const csv = [headers, ...rows]
+      .map(r => r.map(v => `"${(v ?? '').toString().replace(/"/g,'""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `companies_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const handleCreateCompany = async (companyData: Partial<Tenant>) => {
     try {
@@ -137,7 +167,7 @@ export default function CompanyManagement({ onBack }: CompanyManagementProps) {
                 type="text"
                 placeholder="Search companies..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
                 className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -145,7 +175,7 @@ export default function CompanyManagement({ onBack }: CompanyManagementProps) {
             {/* Status Filter */}
             <select
               value={filterActive === 'all' ? 'all' : filterActive.toString()}
-              onChange={(e) => setFilterActive(e.target.value === 'all' ? 'all' : e.target.value === 'true')}
+              onChange={(e) => { setFilterActive(e.target.value === 'all' ? 'all' : e.target.value === 'true'); setPage(1); }}
               className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">All Status</option>
@@ -155,7 +185,7 @@ export default function CompanyManagement({ onBack }: CompanyManagementProps) {
           </div>
 
           <div className="flex items-center space-x-2">
-            <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+            <button onClick={exportCSV} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" title="Download CSV">
               <Download className="h-4 w-4" />
             </button>
             <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
@@ -189,7 +219,7 @@ export default function CompanyManagement({ onBack }: CompanyManagementProps) {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredCompanies.map((company) => (
+              {pageItems.map((company) => (
                 <tr key={company.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -270,6 +300,25 @@ export default function CompanyManagement({ onBack }: CompanyManagementProps) {
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="flex items-center justify-between p-4 text-sm text-gray-600">
+          <div>
+            Showing {(filteredCompanies.length === 0) ? 0 : ((page - 1) * pageSize + 1)}–{Math.min(page * pageSize, filteredCompanies.length)} of {filteredCompanies.length}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              className={`px-3 py-1 border rounded ${page <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+            >Prev</button>
+            <span>Page {page} / {totalPages}</span>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              className={`px-3 py-1 border rounded ${page >= totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+            >Next</button>
+          </div>
         </div>
 
         {filteredCompanies.length === 0 && (

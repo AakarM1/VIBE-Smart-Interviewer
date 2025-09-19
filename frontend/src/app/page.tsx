@@ -229,10 +229,14 @@ function SelectionPage() {
           const jdtAttemptsCount = await getUserAttempts('JDT');
           setJdtAttempts(jdtAttemptsCount);
         }
-        // Derive question counts from configuration (still needed for UI numbers)
+        // Prefer backend-provided exact assigned count for SJT; fallback to config
         const jdtConfig = await configurationService.getJDTConfig();
         const sjtConfig = await configurationService.getSJTConfig();
-        if (sjtConfig?.settings?.numberOfQuestions) setSjtQuestionCount(sjtConfig.settings.numberOfQuestions);
+        if (sjtAvail && typeof sjtAvail.assigned_question_count === 'number') {
+          setSjtQuestionCount(sjtAvail.assigned_question_count);
+        } else if (sjtConfig?.settings?.numberOfQuestions) {
+          setSjtQuestionCount(sjtConfig.settings.numberOfQuestions);
+        }
         if (sjtConfig?.settings) {
           const fu = getSjtFollowUpCount(sjtConfig.settings);
           setSjtHasFollowUps(!!fu && fu > 0);

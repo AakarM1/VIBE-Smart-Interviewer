@@ -9,6 +9,13 @@ export interface SJTSettings {
   aiGeneratedQuestions: number; // DEPRECATED: Use followUpCount instead
   followUpCount: number; // Number of AI-generated follow-up questions (replaces aiGeneratedQuestions)
   followUpPenalty: number; // Percentage penalty for follow-up questions (0-100)
+  // NEW advanced SJT behavior fields (optional to preserve compatibility)
+  prepTimeSeconds?: number;
+  autoStartRecording?: boolean;
+  answerTimeSeconds?: number;
+  reRecordLimit?: number;
+  ttsEnabled?: boolean;
+  ttsVoice?: string;
 }
 
 export interface SJTScenario {
@@ -18,6 +25,11 @@ export interface SJTScenario {
   bestResponseRationale: string;
   worstResponseRationale: string;
   assessedCompetency: string;
+  // Optional per-scenario overrides
+  prepTimeSeconds?: number;
+  answerTimeSeconds?: number;
+  reRecordLimit?: number;
+  ttsVoice?: string;
 }
 
 export interface SJTConfig {

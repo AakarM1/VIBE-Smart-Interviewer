@@ -10,6 +10,7 @@ import { LogIn, LogOut, UserPlus, Shield, Home } from 'lucide-react';
 import Image from 'next/image';
 import { useTranslation } from '@/hooks/use-translation';
 import { LanguageSelector } from '@/components/language-selector';
+import { apiService } from '@/lib/api-service';
 
 const ADMIN_EMAIL = 'admin@gmail.com';
 
@@ -17,6 +18,19 @@ export default function Header() {
     const { user, logout, loading } = useAuth();
     const { currentLanguage, isRTL, isMultilingualEnabled } = useLanguage();
     const { ts } = useTranslation(); // Use sync translation for immediate display
+    const [tenantLogo, setTenantLogo] = useState<string | null>(null);
+
+    useEffect(() => {
+        (async () => {
+            if (user?.tenant_id) {
+                const res = await apiService.getTenant(user.tenant_id);
+                if (res.data?.logo_url) setTenantLogo(res.data.logo_url);
+                else setTenantLogo(null);
+            } else {
+                setTenantLogo(null);
+            }
+        })();
+    }, [user?.tenant_id]);
     
     // For better UX, we'll use sync translations with reasonable fallbacks
     const texts = {
@@ -42,8 +56,8 @@ export default function Header() {
 
                 <div className="flex-grow"></div>
                 
-                <div className="flex flex-none items-center justify-end space-x-4">
-                     <Image src="https://placehold.co/100x30.png" alt="Client Logo" width={100} height={30} data-ai-hint="logo" />
+             <div className="flex flex-none items-center justify-end space-x-4">
+                 <Image src={tenantLogo || 'https://placehold.co/100x30.png'} alt="Client Logo" width={100} height={30} data-ai-hint="logo" />
                      <span className="text-sm text-muted-foreground hidden sm:inline">|</span>
                      
                      {/* Language Selector - Header shows ALL languages, independent of admin config */}

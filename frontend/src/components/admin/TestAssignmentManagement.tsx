@@ -10,7 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Calendar, ClipboardList, Target, Users } from 'lucide-react';
+import { Calendar, ClipboardList, Target, Users, ListChecks, Trash2 } from 'lucide-react';
+import { configurationService } from '@/lib/config-service';
 
 interface User {
   id: string;
@@ -40,6 +41,8 @@ export default function TestAssignmentManagement() {
   const [maxAttempts, setMaxAttempts] = useState<number>(3);
   const [notes, setNotes] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [sjtScenarios, setSjtScenarios] = useState<Array<{ id: string | number; name?: string; question: string }>>([]);
+  const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<string | number>>(new Set());
   const { toast } = useToast();
 
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
@@ -48,6 +51,16 @@ export default function TestAssignmentManagement() {
   useEffect(() => {
     fetchAssignedUsers();
     fetchTestAssignments();
+    // Load SJT scenarios from tenant config for scenario assignment
+    (async () => {
+      try {
+  const cfg = await configurationService.getSJTConfig();
+  const sc = ((cfg?.scenarios || []) as any[]).map(s => ({ id: s.id, name: s.name, question: s.question }));
+        setSjtScenarios(sc);
+      } catch (e) {
+        setSjtScenarios([]);
+      }
+    })();
   }, []);
 
   const fetchAssignedUsers = async () => {
@@ -78,6 +91,25 @@ export default function TestAssignmentManagement() {
       }
     } catch (error) {
       console.error('Failed to fetch test assignments:', error);
+    }
+  };
+
+  const handleDeleteAssignment = async (assignmentId: string) => {
+    try {
+      const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
+      const res = await fetch(`${API_BASE}/api/v1/assignments/tests/${assignmentId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({}));
+        throw new Error(err.detail || `Failed to delete assignment (${res.status})`);
+      }
+      toast({ title: 'Assignment removed', description: 'The test assignment has been deleted.' });
+      // Optimistically update without refetch
+      setAssignments(prev => prev.filter(a => a.id !== assignmentId));
+    } catch (e:any) {
+      toast({ variant: 'destructive', title: 'Delete failed', description: e.message || 'Could not delete assignment.' });
     }
   };
 
@@ -126,6 +158,7 @@ export default function TestAssignmentManagement() {
           due_date: dueDate || undefined,
           max_attempts: maxAttempts,
           notes: notes.trim() || undefined,
+          sjt_scenario_ids: selectedTests.has('SJT') && selectedScenarioIds.size > 0 ? Array.from(selectedScenarioIds) : undefined,
         }),
       });
 
@@ -141,7 +174,8 @@ export default function TestAssignmentManagement() {
         setSelectedTests(new Set());
         setDueDate('');
         setMaxAttempts(3);
-        setNotes('');
+  setNotes('');
+  setSelectedScenarioIds(new Set());
         
         // Refresh data
         fetchTestAssignments();
@@ -241,6 +275,30 @@ export default function TestAssignmentManagement() {
                   </div>
                 ))}
               </div>
+              {selectedTests.has('SJT') && (
+                <div className="mt-3 p-3 border rounded">
+                  <div className="flex items-center gap-2 mb-2"><ListChecks className="h-4 w-4"/><span className="font-medium text-sm">Select SJT Scenarios (optional)</span></div>
+                  {sjtScenarios.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No scenarios configured. Use Admin → SJT to add scenarios. If left empty, the default number of questions from settings will be used.</p>
+                  ) : (
+                    <div className="max-h-40 overflow-auto grid grid-cols-1 gap-2">
+                      {sjtScenarios.map(s => (
+                        <label key={String(s.id)} className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={selectedScenarioIds.has(s.id)}
+                            onCheckedChange={(c)=>{
+                              const next = new Set(selectedScenarioIds);
+                              if (c) next.add(s.id); else next.delete(s.id);
+                              setSelectedScenarioIds(next);
+                            }}
+                          />
+                          <span className="truncate">{s.name ? `${s.name}` : `#${String(s.id)}`} • {s.question}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Due Date */}
@@ -315,12 +373,18 @@ export default function TestAssignmentManagement() {
                         <Badge variant="outline">No tests assigned</Badge>
                       ) : (
                         userAssignments.map((assignment) => (
-                          <Badge
-                            key={assignment.id}
-                            className={getStatusColor(assignment.status)}
-                          >
-                            {assignment.test_type} - {assignment.status}
-                          </Badge>
+                          <div key={assignment.id} className="flex items-center gap-1">
+                            <Badge className={getStatusColor(assignment.status)}>
+                              {assignment.test_type} - {assignment.status}
+                            </Badge>
+                            <button
+                              title="Delete assignment"
+                              className="text-red-600 hover:text-red-700"
+                              onClick={() => handleDeleteAssignment(assignment.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         ))
                       )}
                     </div>

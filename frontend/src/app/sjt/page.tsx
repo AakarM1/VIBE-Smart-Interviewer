@@ -79,6 +79,13 @@ function SJTInterviewPage() {
   const [timeLimit, setTimeLimit] = useState(0); // in minutes
   const [questionTimeLimit, setQuestionTimeLimit] = useState(0); // per question time limit in minutes
   const [showReport, setShowReport] = useState(true);
+  // NEW: Advanced SJT behavior controls
+  const [prepTimeSeconds, setPrepTimeSeconds] = useState(0);
+  const [autoStartRecording, setAutoStartRecording] = useState(true);
+  const [answerTimeSeconds, setAnswerTimeSeconds] = useState(0);
+  const [reRecordLimit, setReRecordLimit] = useState(0);
+  const [ttsEnabled, setTtsEnabled] = useState(false);
+  const [ttsVoice, setTtsVoice] = useState<string | undefined>(undefined);
   const [questionTimes, setQuestionTimes] = useState<number[]>([]); // Track time per question
   const [canTakeTest, setCanTakeTest] = useState(true);
   const [checkingAttempts, setCheckingAttempts] = useState(true);
@@ -211,6 +218,15 @@ function SJTInterviewPage() {
         } else {
           console.log('🕐 No questionTimeLimit found in settings:', settings);
         }
+        // Load advanced SJT settings if present
+        try {
+          if (typeof settings.prepTimeSeconds === 'number') setPrepTimeSeconds(settings.prepTimeSeconds);
+          if (typeof settings.autoStartRecording === 'boolean') setAutoStartRecording(settings.autoStartRecording);
+          if (typeof settings.answerTimeSeconds === 'number') setAnswerTimeSeconds(settings.answerTimeSeconds);
+          if (typeof settings.reRecordLimit === 'number') setReRecordLimit(settings.reRecordLimit);
+          if (typeof settings.ttsEnabled === 'boolean') setTtsEnabled(settings.ttsEnabled);
+          if (typeof settings.ttsVoice === 'string') setTtsVoice(settings.ttsVoice);
+        } catch {}
       }
     } catch (error) {
       console.error('Error loading configuration from database:', error);
@@ -929,12 +945,25 @@ function SJTInterviewPage() {
                 conversationHistory={conversationHistory}
                 questionTimes={questionTimes}
                 setQuestionTimes={setQuestionTimes}
+                prepTimeSeconds={prepTimeSeconds}
+                autoStartRecording={autoStartRecording}
+                answerTimeSeconds={answerTimeSeconds}
+                reRecordLimit={reRecordLimit}
+                ttsEnabled={ttsEnabled}
+                ttsVoice={ttsVoice}
               />
             </div>
           );
         }
         return (
           <div className="w-full max-w-6xl flex flex-col items-center">
+            {(() => {
+              const activeScenario = sjtScenarios[currentQuestionIndex];
+              const effPrep = (activeScenario && typeof (activeScenario as any).prepTimeSeconds === 'number') ? (activeScenario as any).prepTimeSeconds : prepTimeSeconds;
+              const effAnswer = (activeScenario && typeof (activeScenario as any).answerTimeSeconds === 'number') ? (activeScenario as any).answerTimeSeconds : answerTimeSeconds;
+              const effReRecord = (activeScenario && typeof (activeScenario as any).reRecordLimit === 'number') ? (activeScenario as any).reRecordLimit : reRecordLimit;
+              const effVoice = (activeScenario && (activeScenario as any).ttsVoice) ? (activeScenario as any).ttsVoice : ttsVoice;
+              return (
             <Flashcard
               question={currentEntry.question}
               questionNumber={currentQuestionIndex + 1}
@@ -953,7 +982,16 @@ function SJTInterviewPage() {
               conversationHistory={conversationHistory}
               questionTimes={questionTimes}
               setQuestionTimes={setQuestionTimes}
+              // Advanced SJT props (with per-scenario overrides)
+              prepTimeSeconds={effPrep}
+              autoStartRecording={autoStartRecording}
+              answerTimeSeconds={effAnswer}
+              reRecordLimit={effReRecord}
+              ttsEnabled={ttsEnabled}
+              ttsVoice={effVoice}
             />
+              );
+            })()}
           </div>
         );
       case 'RESULTS':

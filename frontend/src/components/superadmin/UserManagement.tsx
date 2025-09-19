@@ -38,6 +38,8 @@ export default function UserManagement({ onBack }: UserManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState<string>('all');
   const [filterActive, setFilterActive] = useState<boolean | 'all'>('all');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -76,6 +78,39 @@ export default function UserManagement({ onBack }: UserManagementProps) {
     
     return matchesSearch && matchesRole && matchesActive;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+  const pageItems = filteredUsers.slice((page - 1) * pageSize, page * pageSize);
+
+  const exportCSV = () => {
+    const headers = [
+      'ID','Name','Email','CandidateID','Company','Role','Active','Language','LastLogin','CreatedAt'
+    ];
+    const rows = filteredUsers.map(u => [
+      u.id,
+      u.candidate_name,
+      u.email,
+      u.candidate_id,
+      u.client_name,
+      u.role,
+      u.is_active ? 'Yes' : 'No',
+      u.language_preference,
+      u.last_login ? new Date(u.last_login).toISOString() : '',
+      u.created_at ? new Date(u.created_at).toISOString() : ''
+    ]);
+    const csv = [headers, ...rows]
+      .map(r => r.map(v => `"${(v ?? '').toString().replace(/"/g,'""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `users_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const handleCreateUser = async (userData: Partial<User> & { password: string }) => {
     try {
@@ -245,7 +280,7 @@ export default function UserManagement({ onBack }: UserManagementProps) {
                 type="text"
                 placeholder="Search users..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => { setSearchTerm(e.target.value); setPage(1); }}
                 className="pl-10 pr-4 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -253,7 +288,7 @@ export default function UserManagement({ onBack }: UserManagementProps) {
             {/* Role Filter */}
             <select
               value={filterRole}
-              onChange={(e) => setFilterRole(e.target.value)}
+              onChange={(e) => { setFilterRole(e.target.value); setPage(1); }}
               className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">All Roles</option>
@@ -265,7 +300,7 @@ export default function UserManagement({ onBack }: UserManagementProps) {
             {/* Status Filter */}
             <select
               value={filterActive === 'all' ? 'all' : filterActive.toString()}
-              onChange={(e) => setFilterActive(e.target.value === 'all' ? 'all' : e.target.value === 'true')}
+              onChange={(e) => { setFilterActive(e.target.value === 'all' ? 'all' : e.target.value === 'true'); setPage(1); }}
               className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">All Status</option>
@@ -275,7 +310,7 @@ export default function UserManagement({ onBack }: UserManagementProps) {
           </div>
 
           <div className="flex items-center space-x-2">
-            <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+            <button onClick={exportCSV} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors" title="Download CSV">
               <Download className="h-4 w-4" />
             </button>
             <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
@@ -320,7 +355,7 @@ export default function UserManagement({ onBack }: UserManagementProps) {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredUsers.map((user) => (
+              {pageItems.map((user) => (
                 <tr key={user.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <input
@@ -428,6 +463,25 @@ export default function UserManagement({ onBack }: UserManagementProps) {
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="flex items-center justify-between p-4 text-sm text-gray-600">
+          <div>
+            Showing {(filteredUsers.length === 0) ? 0 : ((page - 1) * pageSize + 1)}–{Math.min(page * pageSize, filteredUsers.length)} of {filteredUsers.length}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              className={`px-3 py-1 border rounded ${page <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+            >Prev</button>
+            <span>Page {page} / {totalPages}</span>
+            <button
+              disabled={page >= totalPages}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              className={`px-3 py-1 border rounded ${page >= totalPages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+            >Next</button>
+          </div>
         </div>
 
         {filteredUsers.length === 0 && (

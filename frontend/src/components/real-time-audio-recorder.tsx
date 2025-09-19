@@ -16,6 +16,9 @@ interface RealTimeMediaCaptureProps {
   onStopRecording: () => void;
   disabled?: boolean;
   captureMode: InterviewMode;
+  // NEW: external triggers to start/stop recording programmatically
+  startTrigger?: number;
+  stopTrigger?: number;
 }
 
 // Declare the webkitSpeechRecognition interface for TypeScript
@@ -34,6 +37,8 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
   onStopRecording,
   disabled,
   captureMode,
+  startTrigger,
+  stopTrigger,
 }) => {
   const [isRecordingInternal, setIsRecordingInternal] = useState(false);
   const mediaRecorderRef = useRef<globalThis.MediaRecorder | null>(null);
@@ -270,6 +275,27 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
     setIsRecordingInternal(false);
     onStopRecording();
   };
+
+  // Respond to external triggers for programmatic control
+  useEffect(() => {
+    if (typeof startTrigger === 'number') {
+      // When startTrigger changes, attempt to start if not already recording
+      if (!isRecordingInternal && !disabled) {
+        startRecording();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startTrigger]);
+
+  useEffect(() => {
+    if (typeof stopTrigger === 'number') {
+      // When stopTrigger changes, stop if currently recording
+      if (isRecordingInternal) {
+        stopRecording();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopTrigger]);
 
   return (
     <div className="flex flex-col items-center space-y-4 w-full">

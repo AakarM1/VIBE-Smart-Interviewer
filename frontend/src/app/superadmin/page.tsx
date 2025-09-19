@@ -25,6 +25,8 @@ import CompanyManagement from '@/components/superadmin/CompanyManagement';
 import UserManagement from '@/components/superadmin/UserManagement';
 import CompetencyManagement from '@/components/superadmin/CompetencyManagement';
 import BulkUserGenerator from '@/components/superadmin/BulkUserGenerator';
+import SJTScenarioManagement from '@/components/superadmin/SJTScenarioManagement';
+import BulkAdminAssignment from '@/components/superadmin/BulkAdminAssignment';
 
 // Define navigation items for the sidebar
 const navigationItems = [
@@ -57,6 +59,18 @@ const navigationItems = [
     label: 'Competencies',
     icon: Award,
     description: 'Define and manage skill competencies'
+  },
+  {
+    id: 'sjt',
+    label: 'SJT Scenarios',
+    icon: FileText,
+    description: 'Per-company SJT scenario selection and assignment'
+  },
+  {
+    id: 'assign-users-admin',
+    label: 'Assign Users to Admin',
+    icon: UserCheck,
+    description: 'Superadmin tool to map candidates to admins'
   },
   {
     id: 'settings',
@@ -196,6 +210,8 @@ function SuperAdminDashboard() {
           {activeSection === 'users' && <UsersSection />}
           {activeSection === 'bulk-generate' && <BulkGenerateSection />}
           {activeSection === 'competencies' && <CompetenciesSection />}
+          {activeSection === 'sjt' && <SJTSection />}
+          {activeSection === 'assign-users-admin' && <BulkAdminAssignment />}
           {activeSection === 'settings' && <SettingsSection />}
         </main>
       </div>
@@ -318,6 +334,10 @@ function BulkGenerateSection() {
 
 function CompetenciesSection() {
   return <CompetencyManagement />;
+}
+
+function SJTSection() {
+  return <SJTScenarioManagement />;
 }
 
 function SettingsSection() {
