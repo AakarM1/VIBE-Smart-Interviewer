@@ -79,7 +79,7 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
 
   useEffect(() => {
     let activeStream: MediaStream | null = null;
-    const getMediaPermission = async () => {
+  const getMediaPermission = async () => {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setHasPermission(false);
         toast({
@@ -90,9 +90,10 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
         return;
       }
       try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: true, 
-            video: captureMode === 'video' 
+        // First try requested mode
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: captureMode === 'video'
         });
         activeStream = mediaStream;
         setStream(mediaStream);
@@ -101,13 +102,29 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
           videoRef.current.srcObject = mediaStream;
         }
       } catch (error) {
-        console.error('Error accessing media devices:', error);
-        setHasPermission(false);
-        toast({
-          variant: 'destructive',
-          title: t('recorder.permissionsDeniedTitle'),
-          description: t('recorder.permissionsDeniedMsg'),
-        });
+        console.warn('Primary getUserMedia failed, attempting audio-only fallback:', error);
+        try {
+          // Fallback to audio-only if camera is blocked or unavailable
+          const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          activeStream = audioOnly;
+          setStream(audioOnly);
+          setHasPermission(true);
+          if (videoRef.current) {
+            videoRef.current.srcObject = null;
+          }
+          toast({
+            title: t('recorder.cameraUnavailableTitle') || 'Camera unavailable',
+            description: t('recorder.cameraUnavailableMsg') || 'Continuing with microphone only.',
+          });
+        } catch (fallbackErr) {
+          console.error('Audio-only fallback failed:', fallbackErr);
+          setHasPermission(false);
+          toast({
+            variant: 'destructive',
+            title: t('recorder.permissionsDeniedTitle'),
+            description: t('recorder.permissionsDeniedMsg'),
+          });
+        }
       }
     };
     getMediaPermission();
@@ -230,8 +247,10 @@ const RealTimeMediaCapture: React.FC<RealTimeMediaCaptureProps> = ({
         });
       }
 
-      const mimeType = captureMode === 'video' ? 'video/webm' : 'audio/webm';
-      mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
+  // Choose mime type based on available tracks; fallback to audio if no video track
+  const hasVideoTrack = stream.getVideoTracks && stream.getVideoTracks().length > 0;
+  const mimeType = hasVideoTrack ? 'video/webm' : 'audio/webm';
+  mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
       mediaChunksRef.current = [];
 
       mediaRecorderRef.current.ondataavailable = (event) => {

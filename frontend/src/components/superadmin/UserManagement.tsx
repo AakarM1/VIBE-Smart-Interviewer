@@ -742,6 +742,26 @@ function EditUserModal({ user, onClose, onSubmit }: {
     is_active: user.is_active
   });
 
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
+
+  useEffect(() => {
+    const loadCompanies = async () => {
+      setLoadingCompanies(true);
+      try {
+        const result = await apiService.getTenants();
+        if (result.data && result.data.tenants) {
+          setCompanies(result.data.tenants);
+        }
+      } catch (error) {
+        console.error('Failed to load companies:', error);
+      } finally {
+        setLoadingCompanies(false);
+      }
+    };
+    loadCompanies();
+  }, []);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit(formData);
@@ -801,13 +821,20 @@ function EditUserModal({ user, onClose, onSubmit }: {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Company *
               </label>
-              <input
-                type="text"
+              <select
                 required
                 value={formData.client_name}
                 onChange={(e) => setFormData({ ...formData, client_name: e.target.value })}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+                disabled={loadingCompanies || companies.length === 0}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50"
+              >
+                {loadingCompanies && <option value="">Loading companies...</option>}
+                {!loadingCompanies && companies.length === 0 && <option value="">No companies available</option>}
+                {!loadingCompanies && companies.length > 0 && <option value="">Select a company</option>}
+                {!loadingCompanies && companies.map((c: any) => (
+                  <option key={c.id} value={c.name || c.tenant_name || c.company_name}>{c.name || c.tenant_name || c.company_name}</option>
+                ))}
+              </select>
             </div>
           </div>
 

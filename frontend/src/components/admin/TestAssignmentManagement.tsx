@@ -146,20 +146,25 @@ export default function TestAssignmentManagement() {
     setLoading(true);
     try {
       const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
+      // Build payload with proper normalization to match backend schema
+      const payload = {
+        user_ids: Array.from(selectedUsers),
+        test_types: Array.from(selectedTests).map(t => String(t).toUpperCase()),
+        due_date: (dueDate && !Number.isNaN(Date.parse(dueDate))) ? new Date(dueDate).toISOString() : undefined,
+        max_attempts: maxAttempts,
+        notes: notes.trim() || undefined,
+        sjt_scenario_ids: selectedTests.has('SJT') && selectedScenarioIds.size > 0
+          ? Array.from(selectedScenarioIds).map(id => String(id))
+          : undefined,
+      };
+
       const response = await fetch(`${API_BASE}/api/v1/assignments/tests/bulk`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          user_ids: Array.from(selectedUsers),
-          test_types: Array.from(selectedTests),
-          due_date: dueDate || undefined,
-          max_attempts: maxAttempts,
-          notes: notes.trim() || undefined,
-          sjt_scenario_ids: selectedTests.has('SJT') && selectedScenarioIds.size > 0 ? Array.from(selectedScenarioIds) : undefined,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -180,11 +185,15 @@ export default function TestAssignmentManagement() {
         // Refresh data
         fetchTestAssignments();
       } else {
-        const error = await response.json();
+        let error: any = {};
+        try { error = await response.json(); } catch {}
+        const detail = error?.detail
+          || (Array.isArray(error) && error.length && error[0]?.msg)
+          || `Failed to assign tests to users. (${response.status})`;
         toast({
           variant: 'destructive',
           title: 'Assignment Failed',
-          description: error.detail || 'Failed to assign tests to users.',
+          description: typeof detail === 'string' ? detail : 'Failed to assign tests to users.',
         });
       }
     } catch (error) {

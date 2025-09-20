@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -150,6 +149,7 @@ function SJTInterviewPage() {
     }
 
     let scenariosToUse = fallbackSjtScenarios;
+    let maxFollowUpCount = 0;
 
     try {
       // Get global settings from database
@@ -159,74 +159,118 @@ function SJTInterviewPage() {
         if (globalSettings.showReport !== undefined) setShowReport(globalSettings.showReport);
       }
       
-      // Get SJT configuration from database
-      const savedConfig = await configurationService.getSJTConfig();
-      if (savedConfig) {
-        const { scenarios, settings } = savedConfig;
-        if (scenarios && scenarios.length > 0) {
-          // Validate scenarios have required fields
-          const validScenarios = scenarios.filter((s: Scenario) => 
-            s && s.situation && s.question && s.assessedCompetency
-          );
+      // Get assignment-specific scenarios from the test start endpoint
+      try {
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+        const token = (typeof window !== 'undefined' ? sessionStorage.getItem('access_token') : null) || localStorage.getItem('access_token');
+        
+        const response = await fetch(`${API_BASE}/api/v1/tests/attempts/start`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ test_type: 'SJT' })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('🎯 Using assignment-specific scenarios:', data);
           
-          if (validScenarios.length === 0) {
-            console.warn('⚠️ No valid scenarios found in configuration, using fallback');
-            scenariosToUse = fallbackSjtScenarios;
-          } else {
-            let allScenarios = validScenarios;
-            const numQuestionsToUse = settings?.numberOfQuestions > 0 ? settings.numberOfQuestions : allScenarios.length;
+          if (data.questions && data.questions.length > 0) {
+            // Convert API response format to expected scenario format
+            scenariosToUse = data.questions.map((q: any, index: number) => ({
+              id: q.id || (index + 1),
+              situation: q.situation || '',
+              question: q.question || '',
+              assessedCompetency: q.assessedCompetency || '',
+              responses: q.responses || [],
+              bestResponse: q.bestResponse || '',
+              worstResponse: q.worstResponse || '',
+              bestResponseRationale: q.bestResponseRationale || '',
+              worstResponseRationale: q.worstResponseRationale || ''
+            }));
             
-            if (numQuestionsToUse < allScenarios.length) {
-              allScenarios.sort(() => 0.5 - Math.random());
-            }
-            scenariosToUse = allScenarios.slice(0, numQuestionsToUse);
+            console.log(`✅ Loaded ${scenariosToUse.length} assignment-specific scenarios`);
           }
-          
-          // Check if AI follow-up questions are enabled
-          const configuredFollowUpCount = getSjtFollowUpCount(settings);
-          console.log(`🎯 Admin configured follow-up count: ${configuredFollowUpCount}`);
-          
-          if (configuredFollowUpCount > 0) {
-            console.log(`🤖 Setting max follow-up questions per scenario to ${configuredFollowUpCount}`);
-            
-            // Set the maximum number of follow-ups based on admin configuration
-            setMaxFollowUps(configuredFollowUpCount);
-            
-            // Initialize the follow-up map to track follow-ups per question
-            const initialFollowUpMap: {[key: number]: number} = {};
-            scenariosToUse.forEach((_, index) => {
-              initialFollowUpMap[index + 1] = 0; // No follow-ups generated initially
-            });
-            setFollowUpMap(initialFollowUpMap);
-            
-            toast({ 
-              title: `Adaptive Follow-up Questions Enabled`,
-              description: `Up to ${configuredFollowUpCount} follow-up question${configuredFollowUpCount === 1 ? '' : 's'} will be generated based on your answers.`
-            });
-          } else {
-            // No AI follow-up questions enabled
-            console.log('🚫 Follow-up questions disabled in admin configuration');
-            setMaxFollowUps(0);
-          }
-        }
-        if (settings?.timeLimit) {
-          setTimeLimit(settings.timeLimit);
-        }
-        if (settings?.questionTimeLimit) {
-          console.log('🕐 Loading questionTimeLimit from settings:', settings.questionTimeLimit);
-          setQuestionTimeLimit(settings.questionTimeLimit);
         } else {
-          console.log('🕐 No questionTimeLimit found in settings:', settings);
+          console.warn('Failed to get assignment-specific scenarios, falling back to config');
+          throw new Error('Assignment endpoint failed');
         }
-        // Load advanced SJT settings if present
-        try {
-          if (typeof settings.prepTimeSeconds === 'number') setPrepTimeSeconds(settings.prepTimeSeconds);
-          if (typeof settings.autoStartRecording === 'boolean') setAutoStartRecording(settings.autoStartRecording);
-          if (typeof settings.answerTimeSeconds === 'number') setAnswerTimeSeconds(settings.answerTimeSeconds);
-          if (typeof settings.reRecordLimit === 'number') setReRecordLimit(settings.reRecordLimit);
-          if (typeof settings.ttsEnabled === 'boolean') setTtsEnabled(settings.ttsEnabled);
-          if (typeof settings.ttsVoice === 'string') setTtsVoice(settings.ttsVoice);
-        } catch {}
+      } catch (assignmentError) {
+        console.warn('Assignment-specific scenarios failed, using general config:', assignmentError);
+        
+        // Fallback to general SJT configuration
+        const savedConfig = await configurationService.getSJTConfig();
+        if (savedConfig) {
+          const { scenarios, settings } = savedConfig;
+          if (scenarios && scenarios.length > 0) {
+            // Validate scenarios have required fields
+            const validScenarios = scenarios.filter((s: Scenario) => 
+              s && s.situation && s.question && s.assessedCompetency
+            );
+            
+            if (validScenarios.length === 0) {
+              console.warn('⚠️ No valid scenarios found in configuration, using fallback');
+              scenariosToUse = fallbackSjtScenarios;
+            } else {
+              let allScenarios = validScenarios;
+              const numQuestionsToUse = settings?.numberOfQuestions > 0 ? settings.numberOfQuestions : allScenarios.length;
+              
+              if (numQuestionsToUse < allScenarios.length) {
+                allScenarios.sort(() => 0.5 - Math.random());
+              }
+              scenariosToUse = allScenarios.slice(0, numQuestionsToUse);
+            }
+            
+            // Check if AI follow-up questions are enabled
+            const configuredFollowUpCount = getSjtFollowUpCount(settings);
+            maxFollowUpCount = configuredFollowUpCount;
+          }
+          
+          if (settings?.timeLimit) {
+            setTimeLimit(settings.timeLimit);
+          }
+          if (settings?.questionTimeLimit) {
+            console.log('🕐 Loading questionTimeLimit from settings:', settings.questionTimeLimit);
+            setQuestionTimeLimit(settings.questionTimeLimit);
+          } else {
+            console.log('🕐 No questionTimeLimit found in settings:', settings);
+          }
+          // Load advanced SJT settings if present
+          try {
+            if (typeof settings.prepTimeSeconds === 'number') setPrepTimeSeconds(settings.prepTimeSeconds);
+            if (typeof settings.autoStartRecording === 'boolean') setAutoStartRecording(settings.autoStartRecording);
+            if (typeof settings.answerTimeSeconds === 'number') setAnswerTimeSeconds(settings.answerTimeSeconds);
+            if (typeof settings.reRecordLimit === 'number') setReRecordLimit(settings.reRecordLimit);
+            if (typeof settings.ttsEnabled === 'boolean') setTtsEnabled(settings.ttsEnabled);
+            if (typeof settings.ttsVoice === 'string') setTtsVoice(settings.ttsVoice);
+          } catch {}
+        }
+      }
+      
+      // Set up follow-ups if enabled
+      if (maxFollowUpCount > 0) {
+        console.log(`🤖 Setting max follow-up questions per scenario to ${maxFollowUpCount}`);
+        
+        // Set the maximum number of follow-ups based on admin configuration
+        setMaxFollowUps(maxFollowUpCount);
+        
+        // Initialize the follow-up map to track follow-ups per question
+        const initialFollowUpMap: {[key: number]: number} = {};
+        scenariosToUse.forEach((_, index) => {
+          initialFollowUpMap[index + 1] = 0; // No follow-ups generated initially
+        });
+        setFollowUpMap(initialFollowUpMap);
+        
+        toast({ 
+          title: `Adaptive Follow-up Questions Enabled`,
+          description: `Up to ${maxFollowUpCount} follow-up question${maxFollowUpCount === 1 ? '' : 's'} will be generated based on your answers.`
+        });
+      } else {
+        // No AI follow-up questions enabled
+        console.log('🚫 Follow-up questions disabled in admin configuration');
+        setMaxFollowUps(0);
       }
     } catch (error) {
       console.error('Error loading configuration from database:', error);
@@ -926,6 +970,16 @@ function SJTInterviewPage() {
                 </div>
               </div>
               
+              {/* Question count display consistent with homepage */}
+              <div className="w-full max-w-6xl mb-4">
+                <h1 className="text-2xl font-bold text-center text-gray-700">
+                  Situational Judgement Test
+                </h1>
+                <p className="text-center text-gray-600 mt-2">
+                  Questions: {`${sjtScenarios.length.toString().padStart(2, '0')}${maxFollowUps > 0 ? '+' : ''}`}
+                </p>
+              </div>
+              
               <Flashcard
                 question={currentEntry.question}
                 questionNumber={currentQuestionIndex + 1}
@@ -936,6 +990,11 @@ function SJTInterviewPage() {
                 mode={interviewMode}
                 isAnswered={currentEntry.answer !== null}
                 onFinishInterview={handleFinishInterview}
+                onCancelInterview={() => {
+                  // Bypass the "no answers" restriction when cancelling
+                  console.log('⚠️ Candidate cancelled test');
+                  setStatus('COMPLETED');
+                }}
                 answeredQuestionsCount={answeredQuestionsCount}
                 timeLimitInMinutes={timeLimit}
                 questionTimeLimitInMinutes={questionTimeLimit}
@@ -945,11 +1004,12 @@ function SJTInterviewPage() {
                 conversationHistory={conversationHistory}
                 questionTimes={questionTimes}
                 setQuestionTimes={setQuestionTimes}
+                // Reading + answering: default 60s reading, then answerTimeSeconds
                 prepTimeSeconds={prepTimeSeconds}
                 autoStartRecording={autoStartRecording}
                 answerTimeSeconds={answerTimeSeconds}
                 reRecordLimit={reRecordLimit}
-                ttsEnabled={ttsEnabled}
+                ttsEnabled={true}
                 ttsVoice={ttsVoice}
               />
             </div>
@@ -957,6 +1017,15 @@ function SJTInterviewPage() {
         }
         return (
           <div className="w-full max-w-6xl flex flex-col items-center">
+            {/* Question count display consistent with homepage */}
+            <div className="w-full mb-4">
+              <h1 className="text-2xl font-bold text-center text-gray-700">
+                Situational Judgement Test
+              </h1>
+              <p className="text-center text-gray-600 mt-2">
+                Questions: {`${sjtScenarios.length.toString().padStart(2, '0')}${maxFollowUps > 0 ? '+' : ''}`}
+              </p>
+            </div>
             {(() => {
               const activeScenario = sjtScenarios[currentQuestionIndex];
               const effPrep = (activeScenario && typeof (activeScenario as any).prepTimeSeconds === 'number') ? (activeScenario as any).prepTimeSeconds : prepTimeSeconds;
@@ -974,6 +1043,10 @@ function SJTInterviewPage() {
               mode={interviewMode}
               isAnswered={currentEntry.answer !== null}
               onFinishInterview={handleFinishInterview}
+              onCancelInterview={() => {
+                console.log('⚠️ Candidate cancelled test');
+                setStatus('COMPLETED');
+              }}
               answeredQuestionsCount={answeredQuestionsCount}
               timeLimitInMinutes={timeLimit}
               onTimeUp={handleFinishInterview}
@@ -987,7 +1060,7 @@ function SJTInterviewPage() {
               autoStartRecording={autoStartRecording}
               answerTimeSeconds={effAnswer}
               reRecordLimit={effReRecord}
-              ttsEnabled={ttsEnabled}
+              ttsEnabled={true}
               ttsVoice={effVoice}
             />
               );
@@ -1102,4 +1175,3 @@ export default function ProtectedSJTInterviewPage() {
     )
 }
 
-    

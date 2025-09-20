@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, FileText, Users, CheckSquare, Square, Eye, ChevronDown, ChevronUp, Loader2, Send } from 'lucide-react';
-import { apiService, Tenant, User } from '@/lib/api-service';
+import { FileText, Users, CheckSquare, Square, ChevronDown, ChevronUp, Loader2, Send } from 'lucide-react';
+import { apiService, User } from '@/lib/api-service';
 import { configurationService } from '@/lib/config-service';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -16,69 +16,58 @@ type Scenario = { id: string | number; name?: string; situation: string; questio
 
 export default function SJTScenarioManagement() {
   const { toast } = useToast();
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
-  const [tenantUsers, setTenantUsers] = useState<User[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [globalLoading, setGlobalLoading] = useState(false);
   const [userSearch, setUserSearch] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [expandedScenario, setExpandedScenario] = useState<string | number | null>(null);
   const [loading, setLoading] = useState(false);
   const [assigning, setAssigning] = useState(false);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [newScenario, setNewScenario] = useState<{
-    name?: string;
-    situation: string;
-    question: string;
-    bestResponseRationale?: string;
-    worstResponseRationale?: string;
-    assessedCompetency?: string;
-    prepTimeSeconds?: number;
-    reRecordLimit?: number;
-    ttsVoice?: string;
-  }>({ situation: '', question: '' });
+  // Superadmin now works directly with global scenarios (no company filter)
 
   useEffect(() => {
-    // Load tenants list
-    (async () => {
-      const res = await apiService.getTenants({ is_active: true });
-      if (res.data) setTenants(res.data.tenants);
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (!selectedTenantId) return;
-    // Load tenant SJT config and users
+    // Load global scenarios from configuration (no tenant filter)
     (async () => {
       setLoading(true);
       try {
-        const [cfgRes, usersRes] = await Promise.all([
-          apiService.getConfigurationForTenant('sjt', selectedTenantId),
-          apiService.listTenantUsers(selectedTenantId, { role: 'candidate', limit: 500 })
-        ]);
-  const cfg = cfgRes.data?.config_data || null;
-  const scns = (cfg?.scenarios || []) as any[];
-  setScenarios(scns.map(s => ({ id: s.id, name: s.name, situation: s.situation, question: s.question, assessedCompetency: s.assessedCompetency })));
-        setTenantUsers(usersRes.data || []);
-      } catch (e) {
+        const cfg = await configurationService.getSJTConfig();
+        const sc = ((cfg?.scenarios || []) as any[]).map(s => ({ id: s.id, name: s.name, situation: s.situation, question: s.question, assessedCompetency: s.assessedCompetency }));
+        setScenarios(sc);
+      } catch {
         setScenarios([]);
-        setTenantUsers([]);
       } finally {
         setLoading(false);
       }
     })();
-  }, [selectedTenantId]);
+  }, []);
+
+  useEffect(() => {
+    // Load ALL candidates across companies
+    (async () => {
+      setGlobalLoading(true);
+      try {
+        const res = await apiService.getUsers({ role: 'candidate', is_active: true, limit: 2000 });
+        const list = res.data?.users || [];
+        setAllUsers(list);
+      } catch {
+        setAllUsers([]);
+      } finally {
+        setGlobalLoading(false);
+      }
+    })();
+  }, []);
 
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
-    if (!q) return tenantUsers;
-    return tenantUsers.filter(u => (
+    const onlyCandidates = allUsers.filter(u => (u.role || '').toLowerCase() === 'candidate');
+    if (!q) return onlyCandidates;
+    return onlyCandidates.filter(u => (
       u.candidate_name?.toLowerCase().includes(q) ||
       u.email?.toLowerCase().includes(q) ||
       u.candidate_id?.toLowerCase().includes(q)
     ));
-  }, [tenantUsers, userSearch]);
+  }, [allUsers, userSearch]);
 
   const allUsersSelected = selectedUserIds.size > 0 && filteredUsers.every(u => selectedUserIds.has(u.id));
 
@@ -99,6 +88,7 @@ export default function SJTScenarioManagement() {
       return next;
     });
   };
+  const clearAllUsers = () => setSelectedUserIds(new Set());
 
   const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<string | number>>(new Set());
   const allScenariosSelected = scenarios.length > 0 && selectedScenarioIds.size === scenarios.length;
@@ -118,10 +108,6 @@ export default function SJTScenarioManagement() {
   };
 
   const assign = async () => {
-    if (!selectedTenantId) {
-      toast({ variant: 'destructive', title: 'Pick a company', description: 'Select a company first.' });
-      return;
-    }
     if (selectedUserIds.size === 0) {
       toast({ variant: 'destructive', title: 'Pick candidates', description: 'Select one or more users to assign.' });
       return;
@@ -150,79 +136,13 @@ export default function SJTScenarioManagement() {
     }
   };
 
-  const openCreate = () => {
-    if (!selectedTenantId) {
-      toast({ variant: 'destructive', title: 'Pick a company', description: 'Select a company first.' });
-      return;
-    }
-    setNewScenario({ situation: '', question: '' });
-    setIsCreateOpen(true);
-  };
-
-  const saveNewScenario = async () => {
-    if (!selectedTenantId) return;
-    if (!newScenario.situation?.trim() || !newScenario.question?.trim()) {
-      toast({ variant: 'destructive', title: 'Missing fields', description: 'Situation and Question are required.' });
-      return;
-    }
-    setCreating(true);
-    try {
-      // Load existing config for tenant (if any)
-      const cfgRes = await apiService.getConfigurationForTenant('sjt', selectedTenantId);
-      const cfg = cfgRes.data?.config_data || null;
-      const existingScenarios = Array.isArray(cfg?.scenarios) ? cfg.scenarios : [];
-      const settings = cfg?.settings || { timeLimit: 0, numberOfQuestions: Math.max(1, existingScenarios.length + 1), questionTimeLimit: 2, aiGeneratedQuestions: 0, followUpCount: 1, followUpPenalty: 0 };
-      const scenarioToAdd = { id: Date.now(), ...newScenario } as any;
-      const payload = { scenarios: [...existingScenarios, scenarioToAdd], settings, tenant_id: selectedTenantId } as any;
-      const res = await apiService.saveConfiguration('sjt', payload);
-      if (res.data) {
-        toast({ title: 'Scenario created', description: 'A new scenario has been added for this company.' });
-        // Reload scenarios
-        const cfgRes2 = await apiService.getConfigurationForTenant('sjt', selectedTenantId);
-        const cfg2 = cfgRes2.data?.config_data || null;
-        const sc2 = (cfg2?.scenarios || []) as any[];
-        setScenarios(sc2.map(s => ({ id: s.id, name: s.name, situation: s.situation, question: s.question, assessedCompetency: s.assessedCompetency })));
-        setIsCreateOpen(false);
-      } else {
-        toast({ variant: 'destructive', title: 'Failed', description: res.error || 'Could not save scenario.' });
-      }
-    } finally {
-      setCreating(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold flex items-center gap-2"><Building2 className="h-6 w-6"/>SJT Scenario Assignment</h2>
+        <h2 className="text-2xl font-bold">SJT Scenario Assignment</h2>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Select Company</span>
-            {selectedTenantId && (
-              <Button size="sm" variant="outline" onClick={openCreate}>Add Scenario</Button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <select
-            value={selectedTenantId}
-            onChange={(e) => { setSelectedTenantId(e.target.value); setSelectedUserIds(new Set()); setSelectedScenarioIds(new Set()); }}
-            className="border border-gray-300 rounded-lg px-3 py-2 w-full max-w-md"
-          >
-            <option value="">-- Choose a company --</option>
-            {tenants.map(t => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-          {loading && <div className="flex items-center text-sm text-gray-500"><Loader2 className="h-4 w-4 mr-2 animate-spin"/>Loading scenarios and users…</div>}
-        </CardContent>
-      </Card>
-
-      {selectedTenantId && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Scenarios */}
           <Card>
             <CardHeader>
@@ -231,10 +151,7 @@ export default function SJTScenarioManagement() {
             <CardContent>
               {scenarios.length === 0 ? (
                 <div className="text-sm text-gray-500 space-y-3">
-                  <div>No scenarios found for this company.</div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={openCreate}>Create First Question</Button>
-                  </div>
+                  <div>No scenarios found. Configure scenarios under Admin → SJT.</div>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -274,12 +191,17 @@ export default function SJTScenarioManagement() {
           {/* Users */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5"/>Candidates ({tenantUsers.length})</CardTitle>
+              <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5"/>Candidates ({allUsers.length})</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2 mb-3">
                 <Input value={userSearch} onChange={(e) => setUserSearch(e.target.value)} placeholder="Search candidates…"/>
-                <button className="text-sm text-blue-600 hover:underline" onClick={toggleAllUsers}>{allUsersSelected ? 'Unselect all' : 'Select all (filtered)'}</button>
+              </div>
+              <div className="flex items-center gap-3 mb-2 text-sm">
+                <button className="text-blue-600 hover:underline" onClick={toggleAllUsers}>{allUsersSelected ? 'Unselect all' : 'Select all (filtered)'}</button>
+                {selectedUserIds.size > 0 && (
+                  <button className="text-gray-600 hover:underline" onClick={clearAllUsers}>Clear selection</button>
+                )}
               </div>
               <div className="max-h-80 overflow-auto divide-y">
                 {filteredUsers.map(u => (
@@ -297,7 +219,9 @@ export default function SJTScenarioManagement() {
                   <div className="text-sm text-gray-500">No users match your search.</div>
                 )}
               </div>
-
+              {globalLoading && (
+                <div className="flex items-center text-sm text-gray-500 mt-2"><Loader2 className="h-4 w-4 mr-2 animate-spin"/>Loading all candidates…</div>
+              )}
               <div className="mt-4">
                 <Button onClick={assign} disabled={assigning || selectedUserIds.size === 0 || selectedScenarioIds.size === 0} className="w-full">
                   {assigning ? 'Assigning…' : (<span className="flex items-center gap-2"><Send className="h-4 w-4"/>Assign SJT to {selectedUserIds.size} user(s)</span>)}
@@ -305,63 +229,7 @@ export default function SJTScenarioManagement() {
               </div>
             </CardContent>
           </Card>
-        </div>
-      )}
-
-      {/* Create Scenario Modal */}
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Create SJT Scenario</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>Scenario Name (optional)</Label>
-              <Input value={newScenario.name || ''} onChange={(e)=> setNewScenario(ns => ({ ...ns, name: e.target.value }))} placeholder="e.g., Handling a Difficult Customer" />
-            </div>
-            <div className="space-y-1">
-              <Label>Situation</Label>
-              <Textarea rows={3} value={newScenario.situation} onChange={(e)=> setNewScenario(ns => ({ ...ns, situation: e.target.value }))} placeholder="Describe the situation shown to the candidate" />
-            </div>
-            <div className="space-y-1">
-              <Label>Question</Label>
-              <Input value={newScenario.question} onChange={(e)=> setNewScenario(ns => ({ ...ns, question: e.target.value }))} placeholder="What would you do in this situation?" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Best Response Rationale</Label>
-                <Textarea rows={4} value={newScenario.bestResponseRationale || ''} onChange={(e)=> setNewScenario(ns => ({ ...ns, bestResponseRationale: e.target.value }))} placeholder="What a strong answer demonstrates" />
-              </div>
-              <div className="space-y-1">
-                <Label>Worst Response Rationale</Label>
-                <Textarea rows={4} value={newScenario.worstResponseRationale || ''} onChange={(e)=> setNewScenario(ns => ({ ...ns, worstResponseRationale: e.target.value }))} placeholder="What a weak answer looks like" />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label>Competencies (comma-separated)</Label>
-              <Input value={newScenario.assessedCompetency || ''} onChange={(e)=> setNewScenario(ns => ({ ...ns, assessedCompetency: e.target.value }))} placeholder="e.g., Customer Focus, Communication" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label>Prep Time (seconds)</Label>
-                <Input type="number" min={0} value={newScenario.prepTimeSeconds ?? 0} onChange={(e)=> setNewScenario(ns => ({ ...ns, prepTimeSeconds: Math.max(0, parseInt(e.target.value||'0', 10)) }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>Re-record Limit</Label>
-                <Input type="number" min={0} max={5} value={newScenario.reRecordLimit ?? 0} onChange={(e)=> setNewScenario(ns => ({ ...ns, reRecordLimit: Math.min(5, Math.max(0, parseInt(e.target.value||'0', 10))) }))} />
-              </div>
-              <div className="space-y-1">
-                <Label>TTS Voice (id)</Label>
-                <Input value={newScenario.ttsVoice || ''} onChange={(e)=> setNewScenario(ns => ({ ...ns, ttsVoice: e.target.value }))} placeholder="Optional e.g., en-US-Neural2-A" />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={()=> setIsCreateOpen(false)} disabled={creating}>Cancel</Button>
-            <Button onClick={saveNewScenario} disabled={creating}>{creating ? 'Saving…' : 'Save Scenario'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </div>
     </div>
   );
 }

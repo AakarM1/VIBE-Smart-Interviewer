@@ -36,7 +36,7 @@ export function SJTInstructions({ onProceed }: SJTInstructionsProps) {
   const { t } = useTranslation();
   const [language, setLanguage] = useState('');
   const [availableLanguages, setAvailableLanguages] = useState<string[]>(['English']);
-  const [settings, setSettings] = useState({ timeLimit: 0, numberOfQuestions: 5 });
+  const [settings, setSettings] = useState({ timeLimit: 0, numberOfQuestions: 5, answerTimeSeconds: 0 });
   const [hasFollowUps, setHasFollowUps] = useState(false);
 
   useEffect(() => {
@@ -55,6 +55,7 @@ export function SJTInstructions({ onProceed }: SJTInstructionsProps) {
           setSettings({
             timeLimit: savedConfig.settings.timeLimit || 0,
             numberOfQuestions: savedConfig.settings.numberOfQuestions || 5,
+            answerTimeSeconds: savedConfig.settings.answerTimeSeconds || 0,
           });
           const fu = getSjtFollowUpCount(savedConfig.settings);
           setHasFollowUps(!!fu && fu > 0);
@@ -100,7 +101,7 @@ export function SJTInstructions({ onProceed }: SJTInstructionsProps) {
                         </div>
                         <div className="w-full border-t border-white/50 my-4"></div>
                         <div className="w-full">
-                           <p className="text-sm">{t('common.testTime')}</p>
+              <p className="text-sm">{t('common.testTime')}</p>
                            <p className="font-bold text-lg -mt-1">{settings.timeLimit > 0 ? `${settings.timeLimit}:00` : t('common.untimed')}</p>
                         </div>
                     </div>
@@ -115,8 +116,10 @@ export function SJTInstructions({ onProceed }: SJTInstructionsProps) {
                         </div>
                          <div className="w-full border-t border-white/50 my-4"></div>
                         <div className="w-full">
-                           <p className="text-sm">Question Time</p>
-                           <p className="font-bold text-lg -mt-1">{t('flashcard.instructions.n3_noLimit')}</p>
+               <p className="text-sm">Per Question Time</p>
+               <p className="font-bold text-lg -mt-1">
+               {`Reading 1:00 + Answering ${settings.answerTimeSeconds ? `${Math.floor(settings.answerTimeSeconds/60)}:${(settings.answerTimeSeconds%60).toString().padStart(2,'0')}` : 'no limit'}`}
+               </p>
                         </div>
                     </div>
 

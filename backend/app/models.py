@@ -434,9 +434,13 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     candidate_name: Optional[str] = None
+    candidate_id: Optional[str] = None
+    client_name: Optional[str] = None
+    role: Optional[str] = Field(None, pattern="^(superadmin|admin|candidate)$")
     preferred_language: Optional[str] = None
     language_code: Optional[str] = None
     is_active: Optional[bool] = None
+    tenant_id: Optional[uuid.UUID] = None
 
 class UserResponse(UserBase):
     id: uuid.UUID
@@ -626,6 +630,7 @@ class TestAvailabilityResponse(BaseModel):
     max_attempts: int
     can_start: bool
     assignment_status: Optional[str]
+    assigned_question_count: Optional[int] = None
 
 # Bulk assignment requests
 class BulkUserAssignmentRequest(BaseModel):
@@ -639,6 +644,10 @@ class BulkTestAssignmentRequest(BaseModel):
     due_date: Optional[datetime] = None
     max_attempts: int = 3
     notes: Optional[str] = None
+    sjt_scenario_ids: Optional[List[str]] = Field(
+        None,
+        description="For SJT assignments, restrict to these scenario IDs (from tenant SJT config)."
+    )
 
 # Competency Pydantic models
 class CompetencyBase(BaseModel):

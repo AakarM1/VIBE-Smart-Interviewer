@@ -72,6 +72,7 @@ async def get_test_availability(
     assigned = False
     assignment_status = None
     max_attempts = MAX_ATTEMPTS_DEFAULT
+    assigned_question_count: Optional[int] = None
     if current_user.role == 'candidate':
         assignment = db.query(TestAssignment).filter(
             TestAssignment.user_id == current_user.id,
@@ -122,6 +123,24 @@ async def get_test_availability(
         TestAttempt.status == 'in_progress'
     ).first() is not None
 
+    # If SJT and assignment has scenario restriction, compute count from that; else from cfg
+    if tt == 'SJT' and assignment and assignment.custom_config:
+        try:
+            ids = (assignment.custom_config or {}).get('sjt_scenario_ids') or []
+            if isinstance(ids, list):
+                assigned_question_count = len(ids)
+        except Exception:
+            assigned_question_count = None
+    if assigned_question_count is None and configured:
+        try:
+            cfg_data = cfg.config_data or {}
+            scenarios = cfg_data.get('scenarios') or []
+            settings = cfg_data.get('settings') or {}
+            num = settings.get('numberOfQuestions') or len(scenarios)
+            assigned_question_count = int(num)
+        except Exception:
+            assigned_question_count = None
+
     can_start = assigned and configured and attempts_used < max_attempts and not has_in_progress
 
     logger.info(
@@ -136,7 +155,8 @@ async def get_test_availability(
         attempts_used=attempts_used,
         max_attempts=max_attempts,
         can_start=can_start,
-        assignment_status=assignment_status
+        assignment_status=assignment_status,
+        assigned_question_count=assigned_question_count
     )
 
 @router.post("/attempts/start", response_model=StartAttemptResponse)
@@ -164,13 +184,37 @@ async def start_test_attempt(
     if tt == 'SJT':
         scenarios = (config_data.get('scenarios') or [])
         settings = config_data.get('settings') or {}
-        num = settings.get('numberOfQuestions') or len(scenarios)
-        # Shallow copy to avoid mutation
-        pool = list(scenarios)
-        if num < len(pool):
-            # simple deterministic shuffle by sorting on id string
-            pool.sort(key=lambda x: str(x.get('id')))  # could add randomization if needed
-        questions = pool[:num]
+        # If assignment specifies scenario IDs, honor that list
+        selected_ids: Optional[List[str]] = None
+        # Acquire assignment for candidates to honor scenario restrictions
+        assignment = None
+        if current_user.role == 'candidate':
+            assignment = db.query(TestAssignment).filter(
+                TestAssignment.user_id == current_user.id,
+                TestAssignment.test_type == tt
+            ).first()
+        if assignment and assignment.custom_config:
+            try:
+                selected_ids = (assignment.custom_config or {}).get('sjt_scenario_ids')
+                if selected_ids is not None and not isinstance(selected_ids, list):
+                    selected_ids = None
+            except Exception:
+                selected_ids = None
+        selected: List[Dict[str, Any]] = []
+        if selected_ids:
+            id_set = set(str(x) for x in selected_ids)
+            # Keep original order of config scenarios; include only selected
+            for sc in scenarios:
+                sid = str(sc.get('id'))
+                if sid in id_set:
+                    selected.append(sc)
+        else:
+            num = settings.get('numberOfQuestions') or len(scenarios)
+            pool = list(scenarios)
+            if num < len(pool):
+                pool.sort(key=lambda x: str(x.get('id')))
+            selected = pool[:num]
+        questions = selected
     else:  # JDT
         roles = (config_data.get('roles') or [])
         settings = config_data.get('settings') or {}
@@ -264,6 +308,7 @@ class TestAvailabilitySummaryItem(BaseModel):
     max_attempts: int
     can_start: bool
     assignment_status: Optional[str] = None
+    assigned_question_count: Optional[int] = None
 
 class TestAvailabilitySummaryResponse(BaseModel):
     tests: List[TestAvailabilitySummaryItem]
@@ -391,7 +436,6 @@ async def submit_attempt_answer(
     answer_id = str(uuid.uuid4())
     stored_answer = {
         'id': answer_id,
-        'question_index': payload.question_index,
         'base_question_index': base_index,
         'is_follow_up': is_follow_up,
         'follow_up_sequence': payload.follow_up_sequence if payload.follow_up_sequence is not None else sequence,

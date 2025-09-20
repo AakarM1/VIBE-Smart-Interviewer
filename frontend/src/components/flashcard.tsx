@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -27,6 +26,7 @@ interface FlashcardProps {
   mode: InterviewMode;
   isAnswered: boolean;
   onFinishInterview: () => void;
+  onCancelInterview?: () => void;
   answeredQuestionsCount: number;
   timeLimitInMinutes: number;
   questionTimeLimitInMinutes?: number; // NEW: Per-question time limit
@@ -63,6 +63,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
   mode,
   isAnswered,
   onFinishInterview,
+  onCancelInterview,
   timeLimitInMinutes,
   questionTimeLimitInMinutes = 0, // NEW: Default to 0 (no limit)
   onTimeUp,
@@ -83,8 +84,10 @@ const Flashcard: React.FC<FlashcardProps> = ({
   // Debug: Log the per-question timer value
   console.log('🕐 Flashcard received questionTimeLimitInMinutes:', questionTimeLimitInMinutes);
   
-  // Get timer value from props or use default for testing
+  // Get timer value from props or use default for testing (answer timer, excludes reading time)
   const testTimerValue = questionTimeLimitInMinutes || 2;
+  // Dedicated reading time before answering begins (seconds)
+  const [readingTimeRemaining, setReadingTimeRemaining] = useState<number>(60);
   const [isRecording, setIsRecording] = useState(false);
   const [mediaData, setMediaData] = useState<{ blob: Blob; dataUri: string } | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -103,6 +106,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
   const [autoStopKey, setAutoStopKey] = useState<number>(0); // key to trigger recorder stop
   const [rerecordCounts, setRerecordCounts] = useState<{[index: number]: number}>({});
   const [answerElapsed, setAnswerElapsed] = useState(0);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const testTimerRef = useRef<NodeJS.Timeout>();
   const questionCountdownRef = useRef<NodeJS.Timeout>(); // Countdown timer ref
@@ -152,7 +156,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
 
   useEffect(() => {
     // Handle countdown timer when changing questions
-    if (isAnswered) {
+  if (isAnswered) {
       // If question is already answered, stop countdown timer
       if (questionCountdownRef.current) {
         clearInterval(questionCountdownRef.current);
@@ -178,39 +182,40 @@ const Flashcard: React.FC<FlashcardProps> = ({
         clearInterval(prepCountdownRef.current);
       }
 
-      // Start countdown timer if per-question limit is configured
-      if (testTimerValue && testTimerValue > 0) {
-        const totalSeconds = testTimerValue * 60;
-        setQuestionTimeRemaining(totalSeconds);
-        
-        questionCountdownRef.current = setInterval(() => {
-          setQuestionTimeRemaining(prev => {
-            if (prev <= 1) {
-              // Time's up! Auto-submit
-              console.log("Per-question time limit reached! Auto-submitting...");
-              
-              // Clear timer
-              if (questionCountdownRef.current) {
-                clearInterval(questionCountdownRef.current);
-                questionCountdownRef.current = undefined;
-              }
-              
-              // Auto-submit current answer
-              setTimeout(() => {
-                if (isRecording) {
-                  setIsRecording(false); // Stop recording
-                }
-                // Submit with current answer (text or transcription)
-                const currentAnswer = textAnswer || editableTranscription || '';
-                onAnswerSubmit(currentAnswer);
-              }, 100);
-              
-              return 0;
+      // Initialize reading time countdown (e.g., 60s) and TTS during the reading phase
+      setReadingTimeRemaining(60);
+      const readingTimer = setInterval(() => {
+        setReadingTimeRemaining(prev => {
+          if (prev <= 1) {
+            clearInterval(readingTimer);
+            // After reading time, start per-question countdown
+            if (testTimerValue && testTimerValue > 0) {
+              const totalSeconds = testTimerValue * 60;
+              setQuestionTimeRemaining(totalSeconds);
+              questionCountdownRef.current = setInterval(() => {
+                setQuestionTimeRemaining(prevQ => {
+                  if (prevQ <= 1) {
+                    if (questionCountdownRef.current) {
+                      clearInterval(questionCountdownRef.current);
+                      questionCountdownRef.current = undefined;
+                    }
+                    // Auto-submit current answer
+                    setTimeout(() => {
+                      if (isRecording) setIsRecording(false);
+                      const currentAnswer = textAnswer || editableTranscription || '';
+                      onAnswerSubmit(currentAnswer);
+                    }, 100);
+                    return 0;
+                  }
+                  return prevQ - 1;
+                });
+              }, 1000);
             }
-            return prev - 1;
-          });
-        }, 1000);
-      }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
 
       // Initialize prep timer and TTS for SJT if enabled
       setAnswerElapsed(0);
@@ -219,13 +224,25 @@ const Flashcard: React.FC<FlashcardProps> = ({
           try {
             const synth = window.speechSynthesis;
             if (synth) {
-              const utter = new SpeechSynthesisUtterance(question.replace(/\n\n/g, '. '));
+              // If this is a follow-up, speak only the follow-up part; else read entire question
+              let speakText = question;
+              const fuIdx = question.indexOf('Follow-up Question:');
+              if (fuIdx >= 0) {
+                speakText = question.slice(fuIdx);
+              }
+              const utter = new SpeechSynthesisUtterance(speakText.replace(/\n\n/g, '. '));
               if (ttsVoice) {
                 const voices = synth.getVoices();
-                const match = voices.find(v => v.name.toLowerCase().includes(ttsVoice.toLowerCase()));
+                let match = voices.find(v => v.name.toLowerCase().includes(ttsVoice.toLowerCase()));
+                if (!match) {
+                  // fallback: pick a voice matching currentLanguage locale
+                  const lang = (conversationHistory[currentQuestionIndex] as any)?.languageCode || 'en';
+                  match = voices.find(v => v.lang?.toLowerCase().startsWith(lang.toLowerCase()));
+                }
                 if (match) utter.voice = match;
               }
-              utter.rate = 1.0;
+              utter.rate = 1.02;
+              utter.pitch = 0.5;
               ttsUtteranceRef.current = utter;
               synth.cancel();
               synth.speak(utter);
@@ -239,11 +256,17 @@ const Flashcard: React.FC<FlashcardProps> = ({
         (async () => {
           try {
             const langHint = (conversationHistory[currentQuestionIndex] as any)?.languageCode || 'en-US';
+            // Speak only follow-up content if present
+            let speakText = question;
+            const fuIdx = question.indexOf('Follow-up Question:');
+            if (fuIdx >= 0) {
+              speakText = question.slice(fuIdx);
+            }
             const res = await fetch('/api/tts', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                text: question.replace(/\n\n/g, '. '),
+                text: speakText.replace(/\n\n/g, '. '),
                 languageCode: langHint,
                 voiceName: ttsVoice,
                 audioEncoding: 'MP3',
@@ -310,7 +333,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
     }
 
     // Reset media state when question changes
-    setMediaData(null);
+  setMediaData(null);
     setEditableTranscription('');
     setIsRecording(false);
     setIsTranscribing(false);
@@ -326,7 +349,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
         clearInterval(answerTimerRef.current);
       }
     };
-  }, [currentQuestionIndex, isAnswered, testTimerValue]); // Simplified dependencies
+  }, [currentQuestionIndex, isAnswered, testTimerValue, ttsEnabled, ttsVoice, question, conversationHistory]);
 
   // Separate effect to handle text answer loading - only when question or answer status changes
   useEffect(() => {
@@ -569,67 +592,78 @@ const Flashcard: React.FC<FlashcardProps> = ({
            <div className="bg-gray-100 border-b border-gray-300 p-2 flex items-center justify-between">
                 <div className="flex items-center gap-6">
                     {testTimerValue && testTimerValue > 0 && (
-                        <div className={`flex flex-col gap-1 ml-4 ${questionTimeRemaining <= 30 ? 'text-red-600' : questionTimeRemaining <= 60 ? 'text-orange-600' : 'text-green-600'}`}>
-                            <div className="flex items-center gap-2 text-sm font-semibold">
+                        <div className={`flex flex-col gap-1 ml-4`}>
+                            {/* Single continuous bar: left segment purple for reading, right for answering (orange->green) */}
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2 text-sm font-semibold">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7">
                                     <path d="M10 2h4"/>
                                     <path d="m4.6 11 7.4-7.4"/>
                                     <path d="M20 14a8 8 0 1 1-8-8 8 8 0 0 1 8 8Z"/>
                                     <path d="M7 15h5v5"/>
                                 </svg>
-                                {t('flashcard.timeRemaining')} | {formatTime(questionTimeRemaining)}
+                                {/* Show remaining time: during reading show reading time, otherwise show answer time */}
+                                {readingTimeRemaining > 0
+                                  ? `Reading | ${formatTime(readingTimeRemaining)}`
+                                  : `Time Remaining | ${formatTime(questionTimeRemaining || (testTimerValue*60))}`
+                                }
+                              </div>
                             </div>
-                            {/* Progress bar showing remaining time */}
-                            <div className="w-40 h-3 bg-gray-300 rounded-full overflow-hidden">
-                                <div 
-                                    className={`h-full transition-all duration-1000 ${
-                                        questionTimeRemaining <= 30 ? 'bg-red-500' : 
-                                        questionTimeRemaining <= 60 ? 'bg-orange-500' : 'bg-green-500'
-                                    }`}
-                                    style={{ 
-                                        width: `${Math.max(0, (questionTimeRemaining / (testTimerValue * 60)) * 100)}%` 
-                                    }}
-                                />
+                            <div className="w-80 h-3 bg-gray-300 rounded-full overflow-hidden">
+                              {/* Bar composed of two overlays using background gradients */}
+                              <div
+                                className="h-full transition-all duration-1000"
+                                style={{
+                                  background: readingTimeRemaining > 0
+                                    ? `linear-gradient(to right, rgba(128,0,128,0.9) ${Math.min(100, (readingTimeRemaining/60)*100)}%, rgba(255,165,0,0.9) ${Math.min(100, (readingTimeRemaining/60)*100)}%)`
+                                    : `linear-gradient(to right, rgba(34,197,94,0.9) ${Math.max(0, (questionTimeRemaining/(testTimerValue*60))*100)}%, rgba(229,231,235,1) ${Math.max(0, (questionTimeRemaining/(testTimerValue*60))*100)}%)`,
+                                  width: '100%'
+                                }}
+                              />
                             </div>
                         </div>
                     )}
                 </div>
-                <Button variant="outline" className="bg-orange-400 hover:bg-orange-500 text-white rounded-full border-orange-500 px-4 py-1 h-auto" onClick={() => setShowInstructions(true)}>
-                    {t('flashcard.instructions.button')} <Info className="ml-2 h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" className="bg-orange-400 hover:bg-orange-500 text-white rounded-full border-orange-500 px-4 py-1 h-auto" onClick={() => setShowInstructions(true)}>
+                      {t('flashcard.instructions.button')} <Info className="ml-2 h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" className="text-red-600 hover:bg-red-50" onClick={() => setShowCancelConfirm(true)}>
+                      <X className="mr-1 h-4 w-4" /> Cancel Test
+                  </Button>
+                </div>
            </div>
           
           <div className="p-6 space-y-6 flex-grow">
-            {question.includes('Follow-up Question') ? (
-              // Special formatting for follow-up questions
-              <div className="text-base">
-                {/* Split question into parts */}
-                {question.split('\n\n').map((part, index) => {
-                  if (part.startsWith('Situation:')) {
-                    return (
-                      <div key={index} className="mb-4">
-                        <p className="font-medium mb-2">{part.split(':')[0]}:</p>
-                        <p className="pl-4 border-l-2 border-gray-300">{part.split(':').slice(1).join(':')}</p>
-                      </div>
-                    );
-                  } else if (part.startsWith('Follow-up Question:')) {
-                    return (
-                      <div key={index} className="mb-2 bg-blue-50 p-3 rounded-md border border-blue-100">
-                        <p className="font-semibold text-blue-800 mb-1">Follow-up Question:</p>
-                        <p className="font-medium">{part.split(':').slice(1).join(':').trim()}</p>
-                      </div>
-                    );
-                  } else {
-                    return <p key={index} className="mb-2">{part}</p>;
-                  }
-                })}
-              </div>
-            ) : (
-              // Regular formatting for standard questions
-              <p className="text-base font-medium">
-                <span className="mr-2">{questionNumber}.</span>{question}
-              </p>
-            )}
+            {/* Structured formatting for both base and follow-up questions */}
+            <div className="text-base">
+              {question.split('\n\n').map((part, index) => {
+                if (part.startsWith('Situation:')) {
+                  return (
+                    <div key={index} className="mb-4 p-3 rounded-md border border-gray-200 bg-gray-50">
+                      <p className="font-semibold mb-1">Situation</p>
+                      <p className="text-gray-800">{part.split(':').slice(1).join(':').trim()}</p>
+                    </div>
+                  );
+                } else if (part.startsWith('Question:')) {
+                  return (
+                    <div key={index} className="mb-2 p-3 rounded-md border border-blue-200 bg-blue-50">
+                      <p className="font-semibold text-blue-800 mb-1">Question</p>
+                      <p className="font-medium">{part.split(':').slice(1).join(':').trim()}</p>
+                    </div>
+                  );
+                } else if (part.startsWith('Follow-up Question:')) {
+                  return (
+                    <div key={index} className="mb-2 p-3 rounded-md border border-indigo-200 bg-indigo-50">
+                      <p className="font-semibold text-indigo-800 mb-1">Follow-up Question</p>
+                      <p className="font-medium">{part.split(':').slice(1).join(':').trim()}</p>
+                    </div>
+                  );
+                } else {
+                  return <p key={index} className="mb-2">{part}</p>;
+                }
+              })}
+            </div>
 
             {isAnswered && (
                  <div className="flex items-center justify-center text-green-600 p-3 rounded-md bg-green-50 border border-green-200">
@@ -662,7 +696,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
                             isRecordingExternally={isRecording}
                             onStartRecording={() => setIsRecording(true)}
                             onStopRecording={() => setIsRecording(false)}
-                            disabled={isTranscribing || !!mediaData || isAnswered}
+                            disabled={isTranscribing || !!mediaData || isAnswered || readingTimeRemaining > 0}
                             captureMode={captureMode}
               // Programmatic control
               startTrigger={autoStartKey}
@@ -677,9 +711,9 @@ const Flashcard: React.FC<FlashcardProps> = ({
                             </div>
                         ) : (
                             <>
-                                <Label htmlFor="transcription" className="flex items-center gap-2 text-gray-600 font-medium">
-                                    {isRecording ? t('flashcard.transcription.liveLabel') : (mediaData ? t('flashcard.transcription.finalLabel') : t('flashcard.transcription.willAppear'))}
-                                </Label>
+                <Label htmlFor="transcription" className="flex items-center gap-2 text-gray-600 font-medium">
+                  {isRecording ? t('flashcard.transcription.liveLabel') : (mediaData ? t('flashcard.transcription.finalLabel') : t('flashcard.transcription.willAppear'))}
+                </Label>
                                 <Textarea
                                     id="transcription"
                                     placeholder={
@@ -687,7 +721,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
                       ? t('flashcard.transcription.placeholderRecording')
                       : (!mediaData ? t('flashcard.transcription.placeholderAfter') : t('flashcard.transcription.placeholderLocked'))
                                     }
-                                    value={isRecording ? realtimeTranscription : editableTranscription}
+                  value={isRecording ? realtimeTranscription : editableTranscription}
                                     onChange={() => {
                                         // Transcription is never editable for audio/video modes
                                         // This ensures users cannot modify the transcribed text
@@ -808,6 +842,33 @@ const Flashcard: React.FC<FlashcardProps> = ({
             <Button onClick={() => setShowInstructions(false)} className="bg-primary hover:bg-primary/90">
               Got it!
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Test Confirmation */}
+      <Dialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-red-600 flex items-center gap-2">
+              <X className="h-5 w-5" /> Cancel Test?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-700">If you cancel now, your current progress may be lost and you might not be able to retake the test depending on company policy.</p>
+            <p className="text-sm text-gray-700">Are you sure you want to exit?</p>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="outline" onClick={() => setShowCancelConfirm(false)}>Continue Test</Button>
+            <Button className="bg-red-600 hover:bg-red-700 text-white" onClick={() => {
+              if (testTimerRef.current) { clearInterval(testTimerRef.current); }
+              if (onCancelInterview) {
+                onCancelInterview();
+              } else {
+                onFinishInterview();
+              }
+               setShowCancelConfirm(false);
+            }}>Yes, Cancel</Button>
           </div>
         </DialogContent>
       </Dialog>

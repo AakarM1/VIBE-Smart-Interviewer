@@ -205,7 +205,12 @@ async def bulk_assign_tests_to_users(
                 status='assigned',  # Explicitly set status
                 due_date=request.due_date,
                 max_attempts=request.max_attempts,
-                notes=request.notes
+                notes=request.notes,
+                custom_config=(
+                    { 'sjt_scenario_ids': request.sjt_scenario_ids }
+                    if (test_type == 'SJT' and request.sjt_scenario_ids)
+                    else None
+                )
             )
             db.add(assignment)
             created_assignments.append(assignment)

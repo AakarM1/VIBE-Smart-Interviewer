@@ -256,7 +256,7 @@ class FastAPIService {
       }, {} as Record<string, string>)
     ).toString() : '';
     // Backend returns a plain list at GET /users. Normalize to { users, total, page, limit }
-    const res = await this.request<User[] | { users: User[]; total: number; page: number; limit: number }>(`/users${queryString}`);
+  const res = await this.request<User[] | { users: User[]; total: number; page: number; limit: number }>(`/api/v1/users${queryString}`);
     if (res.data) {
       if (Array.isArray(res.data)) {
         return { data: { users: res.data, total: res.data.length, page: 1, limit: res.data.length } };
@@ -266,22 +266,22 @@ class FastAPIService {
     return { error: res.error };
   }
 
-  async createUser(userData: Partial<User>): Promise<ApiResponse<User>> {
-    return this.request<User>('/users', {
+  async createUser(userData: Partial<User> & { password?: string }): Promise<ApiResponse<User>> {
+    return this.request<User>('/api/v1/users', {
       method: 'POST',
       body: JSON.stringify(userData),
     });
   }
 
   async updateUser(userId: string, userData: Partial<User>): Promise<ApiResponse<User>> {
-    return this.request<User>(`/users/${userId}`, {
+    return this.request<User>(`/api/v1/users/${userId}`, {
       method: 'PUT',
       body: JSON.stringify(userData),
     });
   }
 
   async deleteUser(userId: string): Promise<ApiResponse<{ message: string }>> {
-    return this.request<{ message: string }>(`/users/${userId}`, {
+    return this.request<{ message: string }>(`/api/v1/users/${userId}`, {
       method: 'DELETE',
     });
   }
@@ -358,7 +358,7 @@ class FastAPIService {
 
   // User lookup methods
   async getUserByEmail(email: string): Promise<ApiResponse<User>> {
-    return this.request<User>(`/users/by-email/${encodeURIComponent(email)}`);
+    return this.request<User>(`/api/v1/users/by-email/${encodeURIComponent(email)}`);
   }
 
   // Submission management
